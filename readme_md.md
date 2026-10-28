@@ -1,3 +1,6 @@
+
+Final Project Video Link: [Screencast from 28-10-26 05:00:19 PM IST.webm](https://github.com/user-attachments/assets/3502f9d5-1b5f-490c-a965-ff7b485c8678)
+
 # MCP Playground — Frontend
 
 A modern Next.js frontend for experimenting with Model Context Protocol (MCP) tools, resources, and prompts through a Groq-powered backend agent. The application provides a responsive, three-panel workspace for configuring tools, conversing with the agent, and inspecting real-time backend execution logs.

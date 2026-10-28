@@ -1,25 +1,40 @@
 
 Final Project Video Link: [Screencast from 28-10-26 05:00:19 PM IST.webm](https://github.com/user-attachments/assets/3502f9d5-1b5f-490c-a965-ff7b485c8678)
 
-MCP Playground — Frontend
-A Next.js frontend for experimenting with Model Context Protocol (MCP) tools, resources, and prompts through a Groq-powered agent. The application provides a three-panel workspace for configuring tools, chatting with the agent, and inspecting execution activity.
-Features
-- Auto and Manual tool selection: let the agent choose a tool or explicitly select one.
-- MCP integrations: work with project resources and reusable prompts exposed by the backend's MCP server.
-- Custom tool builder: define a tool name, description, input parameters, instructions, MCP resources, and an optional MCP prompt with arguments.
-- Starter questions: launch common MCP tests directly from the empty chat screen.
-- Agent Execution panel: inspect tool calls and backend execution events returned with chat responses.
-- New Chat: reset the conversation and execution log.
-- Collapsible panels: adjust the sidebar and execution-log space.
-- Local custom-tool storage: custom tool definitions are persisted in the browser through the frontend tool hook.
-Tech Stack
-- Next.js (App Router)
-- React and TypeScript
-- Tailwind CSS
-- Lucide React icons
-- FastAPI backend (separate repository)
-- Groq LLM and MCP Python SDK (backend)
-Project Structure
+
+Markdown# MCP Playground — Frontend
+
+A modern Next.js frontend for experimenting with Model Context Protocol (MCP) tools, resources, and prompts through a Groq-powered backend agent. The application provides a responsive, three-panel workspace for configuring tools, conversing with the agent, and inspecting real-time backend execution logs.
+
+---
+
+## Key Features
+
+- **Flexible Tool Execution Modes**:
+  - **Auto Mode**: Allows the Groq-powered agent to dynamically select tools based on user input.
+  - **Manual Mode**: Exposes direct selection of specific built-in tools or user-defined custom tools.
+- **MCP Integrations**: Direct integration with project resources (`read_mcp_resource`) and reusable prompt templates (`get_mcp_prompt`) exposed by the backend MCP server.
+- **Custom Tool Builder**: Define custom tools directly in the UI with custom names, descriptions, input schemas, instructions, target MCP resource URIs, and MCP prompts with arguments.
+- **Agent Execution Panel**: Real-time inspection panel to track backend execution steps, resource reads, prompt retrievals, and model responses.
+- **Starter Cards**: Quick-launch common MCP test scenarios directly from the empty chat screen.
+- **Browser Persistence**: Custom tool definitions automatically persist locally using `localStorage` through the custom tools hook.
+- **Workspace Customization**: Collapsible sidebars and execution logs for tailored screen real estate.
+
+---
+
+## Tech Stack
+
+- **Framework**: [Next.js](https://nextjs.org/) (App Router)
+- **Language**: TypeScript
+- **Styling**: [Tailwind CSS](https://tailwindcss.com/)
+- **Icons**: [Lucide React](https://lucide.dev/)
+- **Backend API**: FastAPI (separate repository) powered by Groq LLM & Python MCP SDK
+
+---
+
+## Project Structure
+
+```text
 mcp-playground-frontend/
 ├── app/
 │   ├── globals.css
@@ -27,122 +42,54 @@ mcp-playground-frontend/
 │   └── page.tsx
 ├── src/
 │   ├── components/
-│   │   ├── chat/ChatPanel.tsx
-│   │   ├── execution/ExecutionLog.tsx
-│   │   ├── layout/Sidebar.tsx
+│   │   ├── chat/
+│   │   │   └── ChatPanel.tsx
+│   │   ├── execution/
+│   │   │   └── ExecutionLog.tsx
+│   │   ├── layout/
+│   │   │   └── Sidebar.tsx
 │   │   └── tools/
 │   │       ├── CreateToolForm.tsx
 │   │       └── ToolSelector.tsx
 │   ├── constants/
 │   │   ├── defaults.ts
 │   │   └── starters.ts
-│   ├── hooks/useTools.ts
-│   ├── lib/api.ts
+│   ├── hooks/
+│   │   └── useTools.ts
+│   ├── lib/
+│   │   └── api.ts
 │   ├── types/
 │   │   ├── chat.ts
 │   │   └── tools.ts
-│   └── utils/toolValidation.ts
+│   └── utils/
+│       └── toolValidation.ts
 ├── public/
 ├── .env.example
 ├── package.json
 └── README.md
-The structure above lists the primary files discussed in this project; your repository may contain additional components and configuration files.
-Prerequisites
-- Node.js compatible with your installed Next.js version
-- npm
-- Running MCP Playground FastAPI backend (by default at http://localhost:8000)
-- Backend configured with its Groq API key and MCP server access
-Getting Started
-1. Clone the frontend repository and enter its directory:
-   git clone <your-frontend-repository-url>
-   cd mcp-playground-frontend
-2. Install dependencies:
-   npm install
-3. Configure the backend URL. Create .env.local from the example:
-   cp .env.example .env.local
-   The file should contain:
-   NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
-   Check src/lib/api.ts to ensure it reads NEXT_PUBLIC_API_BASE_URL; use the variable name actually implemented there if different.
-4. Start the FastAPI backend in its own terminal, following that repository's setup instructions.
-5. Start the frontend:
-   npm run dev
-6. Open http://localhost:3000.
-Security: Keep GROQ_API_KEY on the backend only. Never add it to a NEXT_PUBLIC_ variable or commit real credentials.
-
-How to Use
-1. Chat in Auto Mode
-Select Auto in the left sidebar and ask a question such as:
-Explain the project's requirements and architecture.
-
-The backend agent chooses tools based on the request. Check the Agent Execution panel for actual calls made.
-2. Chat in Manual Mode
-Select Manual, choose a built-in or custom tool, and send a question. Examples of built-in tools include:
-- read_mcp_resource — read MCP project resources.
-- get_mcp_prompt — retrieve reusable MCP prompt instructions.
-The tool must be supported by the connected backend.
-3. Create a Custom Tool
-Click Create New Tool in the sidebar. Configure:
-- Tool Name and Description
-- Input Parameters (name, type, description, required flag)
-- Custom Prompt (instructions for response generation)
-- MCP Resources (for example project://requirements and project://architecture)
-- MCP Prompt (for example explain_technical) and supported prompt arguments such as audience
-Save the tool, switch to Manual, select it, and ask a relevant question. Custom tools are browser-local definitions passed to the backend for execution; they are not automatically installed as executable Python functions on the MCP server.
-4. Use Starter Questions
-On an empty chat, select a starter card to populate the intended tool mode and submit its question. Examples include reading project documentation, fetching reusable prompt instructions, reviewing architecture, and letting the agent choose.
-
-Starter cards that depend on a specific tool are shown only when that tool is available in the frontend tool registry.
-5. Inspect Agent Execution
-Review the right-hand panel for execution events such as resource reads, prompt retrieval, custom-tool activity, and model response generation. The exact event names and sequence depend on the backend response.
-6. Start a New Chat
-Click New chat to clear the current messages, execution log, and selection state. Saved custom tools remain available in the browser.
-Example Test Questions
-Mode	Tool	Question
-Auto	Agent-selected	What are the main requirements of this project?
-Auto	Agent-selected	Explain the architecture and how its components communicate.
-Manual	read_mcp_resource	Summarize the project requirements.
-Manual	get_mcp_prompt	Retrieve the explain_technical prompt for a developer audience.
-Manual	Custom project_review_assistant	Review the project architecture and recommend three improvements.
-
-
-Custom Tool Example
-Name: project_review_assistant
-
-Description: Reviews project requirements and architecture, identifies strengths and improvements, and generates structured recommendations using MCP context.
-
-Input parameter: question (string, required)
-
-MCP resources: project://requirements, project://architecture
-
-MCP prompt: explain_technical (audience: developer or manager, if supported by your MCP server)
-
-Custom prompt:
-You are a project review assistant. Use the supplied MCP context to:
+PrerequisitesBefore running the application, make sure you have:Node.js (v18.x or later recommended)npm, yarn, or pnpm package managerMCP Playground FastAPI Backend running (default: http://localhost:8000)Backend environment properly configured with valid Groq API key and access to an active MCP serverGetting Started1. Clone the RepositoryBashgit clone <your-frontend-repository-url>
+cd mcp-playground-frontend
+2. Install DependenciesBashnpm install
+3. Environment ConfigurationCreate a local environment configuration file from the provided template:Bashcp .env.example .env.local
+Ensure .env.local specifies your backend API address:Code snippetNEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+Security Note: Never expose sensitive keys (such as GROQ_API_KEY) on the frontend or put them inside NEXT_PUBLIC_ variables. API keys must remain securely stored on the backend service.4. Run Development ServerEnsure the FastAPI backend server is running in a separate terminal session, then launch the frontend:Bashnpm run dev
+Open http://localhost:3000 in your browser to start using the playground.How to Use1. Chat in Auto ModeSelect Auto in the left sidebar.Submit a request (e.g., "Explain the project's requirements and architecture.").The backend agent will autonomously determine which tools to invoke.View the step-by-step tool invocation process inside the Agent Execution panel on the right.2. Chat in Manual ModeSelect Manual in the left sidebar.Pick a built-in or custom tool from the selector dropdown:read_mcp_resource: Read project resources directly from the MCP server.get_mcp_prompt: Fetch pre-configured prompt instructions from the MCP server.Submit your targeted question.3. Creating Custom ToolsClick Create New Tool in the left sidebar.Configure your tool:Tool Name & DescriptionInput Parameters (name, type, description, required toggle)Custom Instructions (system instructions guiding response structure)MCP Resources (e.g., project://requirements, project://architecture)MCP Prompt & Arguments (e.g., explain_technical with audience: developer)Click Save Tool.Switch execution mode to Manual, select your new custom tool, and ask a relevant query.Note: Custom tools defined in the frontend are client-side metadata definitions passed alongside execution requests; they do not automatically inject python code onto the backend server.4. Starter CardsWhen starting on a blank chat screen, click any of the available starter cards to automatically configure the intended tool/mode and populate the input field.5. Inspect Execution ActivityMonitor the Agent Execution panel on the right side of the screen to observe raw events emitted during execution, such as:Resource URI fetchingMCP Prompt retrievalContext assemblyModel completion responsesExample Custom Tool SetupFieldValueNameproject_review_assistantDescriptionReviews project requirements and architecture, identifies strengths and improvements, and generates structured recommendations using MCP context.Input Parameterquestion (string, required)MCP Resourcesproject://requirements, project://architectureMCP Promptexplain_technical (audience: developer)Custom System Prompt:PlaintextYou are a project review assistant. Use the supplied MCP context to:
 1. Summarize the project's purpose and requirements.
 2. Explain its architecture and MCP integration.
 3. Identify strengths and limitations.
 4. Recommend three practical improvements.
 
-Base factual claims on retrieved context. Do not invent undocumented
-features. Distinguish documented facts from recommendations. Adjust
-technical depth for the selected audience.
-Test question:
-Perform a complete technical review of this project, including requirements, architecture, MCP integration, strengths, limitations, and three recommended improvements.
-
-Validation
-Run TypeScript checks:
+Base factual claims on retrieved context. Do not invent undocumented features.
+Distinguish documented facts from recommendations. Adjust technical depth for the selected audience.
+Verification & BuildingTo verify code quality and build for production:Bash# Type check TypeScript files
 npx tsc --noEmit
-Run linting if configured:
+
+# Run ESLint (if configured)
 npm run lint
-Build the production bundle:
+
+# Build production distribution
 npm run build
-Start the production server after a successful build:
+
+# Start production server
 npm run start
-Troubleshooting
-Frontend loads, but chat requests fail: Confirm the FastAPI backend is running, the frontend API URL matches its host/port, and the backend allows requests from the frontend origin (CORS).
-
-Cannot read properties of undefined (reading 'length'): Ensure parent components pass arrays to ChatPanel and Sidebar, and that those components guard against missing values.
-
-Starter cards are missing: Verify STARTER_PROMPTS is imported in app/page.tsx, passed as the starters prop, and that the corresponding tools exist in the tool registry.
-
-A custom tool does not retrieve context: Confirm the selected resource URIs and MCP prompt names exist on the backend MCP server and inspect the Agent Execution events.
+TroubleshootingFrontend loads, but chat requests fail:Verify that your FastAPI backend is currently running.Check that NEXT_PUBLIC_API_BASE_URL correctly matches the port/host of the backend.Ensure CORS middleware is enabled on the FastAPI backend allowing requests from your frontend origin (http://localhost:3000).Cannot read properties of undefined (reading 'length'):Ensure parent components pass initial arrays to ChatPanel and Sidebar.Check that components have fallback guards for empty states (e.g., messages || []).Starter cards are missing:Verify STARTER_PROMPTS is correctly imported into app/page.tsx and passed as the starters prop.Check whether cards specify required tools that aren't loaded in the tool registry.Custom tool does not retrieve context:Inspect backend logs and the execution panel to confirm the requested resource URIs or MCP prompt names actually exist on the target MCP server.LicenseThis project is open source and available under the MIT License.

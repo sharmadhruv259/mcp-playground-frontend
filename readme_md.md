@@ -202,27 +202,3 @@ npm run start
 ```
 
 ---
-
-## Troubleshooting
-
-- **Frontend loads, but chat requests fail**:
-  - Verify that your FastAPI backend is currently running.
-  - Check that `NEXT_PUBLIC_API_BASE_URL` correctly matches the port/host of the backend.
-  - Ensure CORS middleware is enabled on the FastAPI backend allowing requests from your frontend origin (`http://localhost:3000`).
-
-- **`Cannot read properties of undefined (reading 'length')`**:
-  - Ensure parent components pass initial arrays to `ChatPanel` and `Sidebar`.
-  - Check that components have fallback guards for empty states (e.g., `messages || []`).
-
-- **Starter cards are missing**:
-  - Verify `STARTER_PROMPTS` is correctly imported into `app/page.tsx` and passed as the `starters` prop.
-  - Check whether cards specify required tools that aren't loaded in the tool registry.
-
-- **Custom tool does not retrieve context**:
-  - Inspect backend logs and the execution panel to confirm the requested `resource URIs` or `MCP prompt names` actually exist on the target MCP server.
-
----
-
-## License
-
-This project is open source and available under the [MIT License](LICENSE).

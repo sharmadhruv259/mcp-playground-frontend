@@ -1,135 +1,242 @@
 
+import type { AgentConfig } from "@/types/agents";
 import type { ExecutionEvent } from "@/types/chat";
-
-import type {
-  ToolDefinition,
-  ToolMode,
-} from "@/types/tools";
+import type { MCPCapabilities } from "@/types/mcp";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ??
   "http://localhost:8000";
 
-/**
- * Represent a custom MCP-backed tool sent to FastAPI.
- */
-interface CustomToolPayload {
-  name: string;
-  description: string;
-  parameters: ToolDefinition["parameters"];
-
-  // User-defined instructions for Groq.
-  prompt_instructions: string;
-
-  // MCP resource and prompt configuration.
-  action: NonNullable<ToolDefinition["action"]>;
-}
-
-/**
- * Represent the chat request sent to FastAPI.
- */
-interface ChatRequest {
-  message: string;
-  mode: ToolMode;
-  selected_tool: string | null;
-  custom_tools: CustomToolPayload[];
-}
-
-/**
- * Represent the chat response returned by FastAPI.
- */
 export interface ChatResponse {
   answer: string;
   events: ExecutionEvent[];
 }
 
+interface ChatRequest {
+  message: string;
+  agent_id: string;
+}
+
 /**
- * Send a message and MCP-backed custom tools to FastAPI.
+ * Send an HTTP request to the FastAPI backend.
  *
  * Args:
- *     message (string): User's question.
- *     mode (ToolMode): Automatic or manual tool selection.
- *     selectedTool (string | null): Manually selected tool.
- *     tools (ToolDefinition[]): Available frontend tools.
+ *     endpoint (string): API endpoint path.
+ *     options (RequestInit): Optional fetch configuration.
  *
  * Returns:
- *     Promise<ChatResponse>: Generated answer and execution events.
+ *     Promise<T>: Parsed backend response.
  *
  * Raises:
- *     Error: If the backend request fails or returns invalid data.
+ *     Error: If the request fails.
  */
-export async function sendChatMessage(
-  message: string,
-  mode: ToolMode,
-  selectedTool: string | null,
-  tools: ToolDefinition[]
-): Promise<ChatResponse> {
-  const customTools: CustomToolPayload[] = tools
-    .filter(
-      (
-        tool
-      ): tool is ToolDefinition & {
-        action: NonNullable<ToolDefinition["action"]>;
-        prompt_instructions: string;
-      } =>
-        tool.source === "custom" &&
-        tool.action?.type === "mcp_context" &&
-        typeof tool.prompt_instructions === "string" &&
-        tool.prompt_instructions.trim().length > 0
-    )
-    .map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.parameters,
-      prompt_instructions: tool.prompt_instructions,
-      action: tool.action,
-    }));
-
-  const payload: ChatRequest = {
-    message,
-    mode,
-    selected_tool: mode === "manual" ? selectedTool : null,
-    custom_tools: customTools,
-  };
-
+async function apiRequest<T>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<T> {
   const response = await fetch(
-    `${API_BASE_URL}/api/chat`,
+    `${API_BASE_URL}${endpoint}`,
     {
-      method: "POST",
+      ...options,
       headers: {
         "Content-Type": "application/json",
+        ...options.headers,
       },
-      body: JSON.stringify(payload),
+      cache: "no-store",
     }
   );
 
   if (!response.ok) {
-  const errorBody = await response.json().catch(() => null);
+    const errorBody = await response
+      .json()
+      .catch(() => null);
 
-  console.log("FastAPI validation error:", errorBody);
+    const detail = errorBody?.detail;
 
-  const detail = errorBody?.detail;
+    if (Array.isArray(detail)) {
+      const messages = detail.map(
+        (error: {
+          loc?: (string | number)[];
+          msg?: string;
+        }) => {
+          const field =
+            error.loc?.join(".") ?? "unknown";
 
-  if (Array.isArray(detail)) {
-    const messages = detail.map(
-      (error: {
-        loc?: (string | number)[];
-        msg?: string;
-      }) => {
-        const field = error.loc?.join(".") ?? "unknown";
-        return `${field}: ${error.msg ?? "Invalid value"}`;
-      }
+          return `${field}: ${
+            error.msg ?? "Invalid value"
+          }`;
+        }
+      );
+
+      throw new Error(messages.join("\n"));
+    }
+
+    throw new Error(
+      typeof detail === "string"
+        ? detail
+        : `Backend request failed (${response.status}).`
     );
-
-    throw new Error(messages.join("\n"));
   }
 
-  throw new Error(
-    typeof detail === "string"
-      ? detail
-      : `Backend request failed (${response.status}).`
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  return (await response.json()) as T;
+}
+
+/**
+ * Retrieve available MCP tools, resources, and prompts.
+ *
+ * Returns:
+ *     Promise<MCPCapabilities>: Discovered capabilities.
+ *
+ * Raises:
+ *     Error: If MCP discovery fails.
+ */
+export async function getMCPCapabilities():
+  Promise<MCPCapabilities> {
+  return apiRequest<MCPCapabilities>(
+    "/api/mcp/capabilities"
   );
 }
 
-  return (await response.json()) as ChatResponse;
+/**
+ * Retrieve saved agents.
+ *
+ * Returns:
+ *     Promise<AgentConfig[]>: Saved agents.
+ *
+ * Raises:
+ *     Error: If the request fails.
+ */
+export async function getAgents():
+  Promise<AgentConfig[]> {
+  return apiRequest<AgentConfig[]>(
+    "/api/agents"
+  );
+}
+
+/**
+ * Retrieve a saved agent by ID.
+ *
+ * Args:
+ *     agentId (string): Saved agent identifier.
+ *
+ * Returns:
+ *     Promise<AgentConfig>: Saved agent.
+ *
+ * Raises:
+ *     Error: If the agent is unavailable.
+ */
+export async function getAgent(
+  agentId: string
+): Promise<AgentConfig> {
+  return apiRequest<AgentConfig>(
+    `/api/agents/${encodeURIComponent(agentId)}`
+  );
+}
+
+/**
+ * Create and persist a custom agent.
+ *
+ * Args:
+ *     agent (AgentConfig): Agent configuration.
+ *
+ * Returns:
+ *     Promise<AgentConfig>: Saved agent.
+ *
+ * Raises:
+ *     Error: If creation fails.
+ */
+export async function createAgent(
+  agent: AgentConfig
+): Promise<AgentConfig> {
+  return apiRequest<AgentConfig>(
+    "/api/agents",
+    {
+      method: "POST",
+      body: JSON.stringify(agent),
+    }
+  );
+}
+
+/**
+ * Update an existing saved agent.
+ *
+ * Args:
+ *     agentId (string): Saved agent identifier.
+ *     agent (AgentConfig): Updated configuration.
+ *
+ * Returns:
+ *     Promise<AgentConfig>: Updated agent.
+ *
+ * Raises:
+ *     Error: If updating fails.
+ */
+export async function updateAgent(
+  agentId: string,
+  agent: AgentConfig
+): Promise<AgentConfig> {
+  return apiRequest<AgentConfig>(
+    `/api/agents/${encodeURIComponent(agentId)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(agent),
+    }
+  );
+}
+
+/**
+ * Delete a saved agent.
+ *
+ * Args:
+ *     agentId (string): Saved agent identifier.
+ *
+ * Returns:
+ *     Promise<void>: Completes after deletion.
+ *
+ * Raises:
+ *     Error: If deletion fails.
+ */
+export async function deleteAgent(
+  agentId: string
+): Promise<void> {
+  return apiRequest<void>(
+    `/api/agents/${encodeURIComponent(agentId)}`,
+    {
+      method: "DELETE",
+    }
+  );
+}
+
+/**
+ * Send a message to a saved custom agent.
+ *
+ * Args:
+ *     message (string): User's question.
+ *     agentId (string): Selected saved agent ID.
+ *
+ * Returns:
+ *     Promise<ChatResponse>: Answer and execution events.
+ *
+ * Raises:
+ *     Error: If execution fails.
+ */
+export async function sendChatMessage(
+  message: string,
+  agentId: string
+): Promise<ChatResponse> {
+  const payload: ChatRequest = {
+    message,
+    agent_id: agentId,
+  };
+
+  return apiRequest<ChatResponse>(
+    "/api/chat",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }
+  );
 }

@@ -1,38 +1,88 @@
 
 "use client";
 
-import { useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import Sidebar from "@/components/layout/Sidebar";
 import ChatPanel from "@/components/chat/ChatPanel";
 import ExecutionLog from "@/components/execution/ExecutionLog";
-import CreateToolForm from "@/components/tools/CreateToolForm";
+import AgentForm from "@/components/agents/AgentForm";
 
-import { DEFAULT_TOOL_SELECTION } from "@/constants/defaults";
 import {
   STARTER_PROMPTS,
   type StarterPrompt,
 } from "@/constants/starters";
 
-import { useTools } from "@/hooks/useTools";
+import { useAgents } from "@/hooks/useAgents";
+import { useMCPCapabilities } from "@/hooks/useMCPCapabilities";
 import { sendChatMessage } from "@/lib/api";
 
+import type { AgentConfig } from "@/types/agents";
 import type {
   ChatMessage,
   ExecutionEvent,
 } from "@/types/chat";
-
 import type {
   ToolDefinition,
   ToolMode,
 } from "@/types/tools";
 
+
+const MCP_TOOL_PREFIX = "mcp_tool__";
+
+const RESOURCE_FUNCTION = "read_mcp_resource";
+const PROMPT_FUNCTION = "get_mcp_prompt";
+
+
 /**
- * Render the MCP Playground application.
+ * Convert a frontend MCP tool name into its native name.
  *
- * Returns:
- *     JSX.Element: Three-panel MCP Playground interface.
+ * Native MCP tools are stored without the Groq prefix.
+ * Resources and prompts are separate MCP operations.
  */
+function getNativeMCPToolName(
+  toolName: string | null
+): string | null {
+  if (!toolName) {
+    return null;
+  }
+
+  if (!toolName.startsWith(MCP_TOOL_PREFIX)) {
+    return null;
+  }
+
+  const nativeName = toolName.slice(
+    MCP_TOOL_PREFIX.length
+  );
+
+  return nativeName || null;
+}
+
+
+/**
+ * Convert a saved native MCP tool name into its
+ * frontend display name.
+ */
+function getFrontendMCPToolName(
+  nativeName: string | null
+): string | null {
+  if (!nativeName) {
+    return null;
+  }
+
+  if (nativeName.startsWith(MCP_TOOL_PREFIX)) {
+    return nativeName;
+  }
+
+  return `${MCP_TOOL_PREFIX}${nativeName}`;
+}
+
+
 export default function Home() {
   const [sidebarCollapsed, setSidebarCollapsed] =
     useState(false);
@@ -40,47 +90,194 @@ export default function Home() {
   const [logCollapsed, setLogCollapsed] =
     useState(false);
 
-  const [showCreateTool, setShowCreateTool] =
+  const [showAgentForm, setShowAgentForm] =
     useState(false);
 
-  const [loading, setLoading] = useState(false);
+  const [editingAgent, setEditingAgent] =
+    useState<AgentConfig | null>(null);
 
+  const [loading, setLoading] = useState(false);
   const [chatKey, setChatKey] = useState(0);
 
-  const [mode, setMode] = useState<ToolMode>(
-    DEFAULT_TOOL_SELECTION.mode
-  );
+  const [mode, setMode] =
+    useState<ToolMode>("auto");
 
-  const [selectedTool, setSelectedTool] = useState<
-    string | null
-  >(DEFAULT_TOOL_SELECTION.selectedTool);
+  const [selectedTool, setSelectedTool] =
+    useState<string | null>(null);
 
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] =
+    useState<ChatMessage[]>([]);
 
-  const [events, setEvents] = useState<ExecutionEvent[]>([]);
+  const [events, setEvents] =
+    useState<ExecutionEvent[]>([]);
 
   const requestIdRef = useRef(0);
   const loadingRef = useRef(false);
 
-  const { tools, addTool, removeTool } = useTools();
+  const {
+    agents,
+    selectedAgent,
+    selectedAgentId,
+    setSelectedAgentId,
+    loading: agentsLoading,
+    error: agentsError,
+    addAgent,
+    editAgent,
+    removeAgent,
+  } = useAgents();
 
-  const availableTools: ToolDefinition[] =
-    Array.isArray(tools) ? tools : [];
+  const {
+    capabilities,
+    error: capabilitiesError,
+  } = useMCPCapabilities();
 
-  /**
-   * Send a user message to the FastAPI backend.
-   *
-   * Args:
-   *     message (string): User's question.
-   *     override (object, optional): Tool mode and selection
-   *         supplied by a starter card.
-   *
-   * Returns:
-   *     Promise<void>: Updates chat messages and execution logs.
-   *
-   * Raises:
-   *     None: Backend errors are caught and displayed.
-   */
+
+  // Adapt discovered MCP operations to the sidebar.
+  const availableTools = useMemo<ToolDefinition[]>(() => {
+    const tools: ToolDefinition[] = [];
+
+    for (const tool of capabilities.tools) {
+      tools.push({
+        name: `${MCP_TOOL_PREFIX}${tool.name}`,
+        description:
+          tool.description ?? "MCP server tool.",
+        source: "builtin",
+        parameters: {
+          type: "object",
+          properties: {},
+          required: [],
+        },
+      });
+    }
+
+    if (capabilities.resources.length > 0) {
+      tools.push({
+        name: RESOURCE_FUNCTION,
+        description:
+          "Read documentation and resources from the MCP server.",
+        source: "builtin",
+        parameters: {
+          type: "object",
+          properties: {},
+          required: [],
+        },
+      });
+    }
+
+    if (capabilities.prompts.length > 0) {
+      tools.push({
+        name: PROMPT_FUNCTION,
+        description:
+          "Retrieve reusable instructions from the MCP server.",
+        source: "builtin",
+        parameters: {
+          type: "object",
+          properties: {},
+          required: [],
+        },
+      });
+    }
+
+    return tools;
+  }, [capabilities]);
+
+
+  // Restore tool permissions when switching saved agents.
+  useEffect(() => {
+    if (!selectedAgent) {
+      setMode("auto");
+      setSelectedTool(null);
+      return;
+    }
+
+    if (
+      selectedAgent.tool_access === "selected" &&
+      selectedAgent.allowed_tools.length > 0
+    ) {
+      setMode("manual");
+
+      setSelectedTool(
+        getFrontendMCPToolName(
+          selectedAgent.allowed_tools[0]
+        )
+      );
+    } else {
+      setMode("auto");
+      setSelectedTool(null);
+    }
+  }, [selectedAgentId, selectedAgent]);
+
+
+  function resetConversation(): void {
+    requestIdRef.current += 1;
+    loadingRef.current = false;
+
+    setLoading(false);
+    setMessages([]);
+    setEvents([]);
+    setChatKey((previous) => previous + 1);
+  }
+
+
+  function handleNewChat(): void {
+    resetConversation();
+  }
+
+
+  function handleAgentChange(agentId: string): void {
+    resetConversation();
+    setSelectedAgentId(agentId || null);
+  }
+
+
+  function handleModeChange(value: ToolMode): void {
+    setMode(value);
+
+    if (value === "auto") {
+      setSelectedTool(null);
+    }
+  }
+
+
+  async function handleSaveAgent(
+    input: AgentConfig
+  ): Promise<void> {
+    if (editingAgent) {
+      await editAgent(input);
+    } else {
+      await addAgent(input);
+    }
+
+    resetConversation();
+  }
+
+
+  async function handleDeleteAgent(): Promise<void> {
+    if (!selectedAgent) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete agent "${selectedAgent.name}"?`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await removeAgent(selectedAgent.id);
+      resetConversation();
+    } catch (error) {
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : "Unable to delete agent."
+      );
+    }
+  }
+
+
   async function handleSendMessage(
     message: string,
     override?: {
@@ -88,9 +285,9 @@ export default function Home() {
       selectedTool: string | null;
     }
   ): Promise<void> {
-    const trimmedMessage = message.trim();
+    const trimmed = message.trim();
 
-    if (!trimmedMessage || loadingRef.current) {
+    if (!trimmed || loadingRef.current) {
       return;
     }
 
@@ -107,38 +304,88 @@ export default function Home() {
     setLoading(true);
     setEvents([]);
 
-    const userMessage: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: "user",
-      content: trimmedMessage,
-    };
-
     setMessages((previous) => [
       ...previous,
-      userMessage,
+      {
+        id: crypto.randomUUID(),
+        role: "user",
+        content: trimmed,
+      },
     ]);
 
     try {
+      if (!selectedAgent) {
+        throw new Error(
+          "Create or select an agent before chatting."
+        );
+      }
+
+      if (
+        activeMode === "manual" &&
+        (!activeTool ||
+          !availableTools.some(
+            (tool) => tool.name === activeTool
+          ))
+      ) {
+        throw new Error(
+          "Choose an available MCP operation in Manual mode."
+        );
+      }
+
+      // Convert frontend tool names to native MCP names.
+      const nativeToolName =
+        activeMode === "manual"
+          ? getNativeMCPToolName(activeTool)
+          : null;
+
+      /*
+       * Backend allowed_tools contains only native
+       * MCP tool names.
+       *
+       * Built-in resource/prompt operations are not
+       * native MCP tools, so they cannot be placed
+       * inside allowed_tools.
+       */
+      const updatedConfig: AgentConfig = {
+        ...selectedAgent,
+
+        tool_access:
+          nativeToolName ? "selected" : "all",
+
+        allowed_tools:
+          nativeToolName
+            ? [nativeToolName]
+            : [],
+      };
+
+      // Persist permissions before invoking the agent.
+      if (
+        updatedConfig.tool_access !==
+          selectedAgent.tool_access ||
+        JSON.stringify(updatedConfig.allowed_tools) !==
+          JSON.stringify(selectedAgent.allowed_tools)
+      ) {
+        await editAgent(updatedConfig);
+      }
+
+      // Execute chat using the saved agent ID.
       const result = await sendChatMessage(
-        trimmedMessage,
-        activeMode,
-        activeTool,
-        availableTools
+        trimmed,
+        selectedAgent.id
       );
 
+      // Ignore stale responses after chat resets.
       if (requestId !== requestIdRef.current) {
         return;
       }
 
-      const assistantMessage: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: result.answer,
-      };
-
       setMessages((previous) => [
         ...previous,
-        assistantMessage,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: result.answer,
+        },
       ]);
 
       setEvents(result.events ?? []);
@@ -177,39 +424,7 @@ export default function Home() {
     }
   }
 
-  /**
-   * Start a new conversation.
-   *
-   * Returns:
-   *     void: Resets chat messages, execution events,
-   *         selected tools, and the chat input.
-   */
-  function handleNewChat(): void {
-    requestIdRef.current += 1;
-    loadingRef.current = false;
 
-    setMessages([]);
-    setEvents([]);
-    setLoading(false);
-
-    setMode(DEFAULT_TOOL_SELECTION.mode);
-    setSelectedTool(
-      DEFAULT_TOOL_SELECTION.selectedTool
-    );
-
-    setChatKey((previous) => previous + 1);
-  }
-
-  /**
-   * Select a starter card and send its prompt.
-   *
-   * Args:
-   *     starter (StarterPrompt): Selected starter card.
-   *
-   * Returns:
-   *     void: Updates the tool selection and submits
-   *         the starter prompt.
-   */
   function handleStarterSelect(
     starter: StarterPrompt
   ): void {
@@ -221,57 +436,16 @@ export default function Home() {
       ? "manual"
       : "auto";
 
-    const nextTool = starter.tool;
-
     setMode(nextMode);
-    setSelectedTool(nextTool);
+    setSelectedTool(starter.tool);
 
     void handleSendMessage(starter.prompt, {
       mode: nextMode,
-      selectedTool: nextTool,
+      selectedTool: starter.tool,
     });
   }
 
-  /**
-   * Change the tool selection mode.
-   *
-   * Args:
-   *     value (ToolMode): Selected mode.
-   *
-   * Returns:
-   *     void: Updates Auto or Manual mode.
-   */
-  function handleModeChange(
-    value: ToolMode
-  ): void {
-    setMode(value);
 
-    if (value === "auto") {
-      setSelectedTool(null);
-    }
-  }
-
-  /**
-   * Delete a custom tool.
-   *
-   * Args:
-   *     name (string): Tool name to remove.
-   *
-   * Returns:
-   *     void: Removes the tool and clears its selection.
-   */
-  function handleDeleteTool(
-    name: string
-  ): void {
-    removeTool(name);
-
-    if (selectedTool === name) {
-      setSelectedTool(null);
-    }
-  }
-
-  // Show starter cards only when their required tools exist.
-  // The Auto starter is always available.
   const availableStarters = STARTER_PROMPTS.filter(
     (starter) =>
       starter.tool === null ||
@@ -280,6 +454,7 @@ export default function Home() {
       )
   );
 
+
   return (
     <main className="flex h-screen overflow-hidden bg-slate-950">
       <Sidebar
@@ -287,6 +462,23 @@ export default function Home() {
         mode={mode}
         selectedTool={selectedTool}
         tools={availableTools}
+        agents={agents}
+        selectedAgentId={selectedAgentId}
+        agentLoading={agentsLoading}
+        onSelectAgent={handleAgentChange}
+        onCreateAgent={() => {
+          setEditingAgent(null);
+          setShowAgentForm(true);
+        }}
+        onEditAgent={() => {
+          if (!selectedAgent) return;
+
+          setEditingAgent(selectedAgent);
+          setShowAgentForm(true);
+        }}
+        onDeleteAgent={() => {
+          void handleDeleteAgent();
+        }}
         onToggle={() =>
           setSidebarCollapsed(
             (previous) => !previous
@@ -295,20 +487,27 @@ export default function Home() {
         onNewChat={handleNewChat}
         onModeChange={handleModeChange}
         onToolChange={setSelectedTool}
-        onCreateTool={() =>
-          setShowCreateTool(true)
-        }
-        onDeleteTool={handleDeleteTool}
       />
 
-      <ChatPanel
-        key={chatKey}
-        messages={messages}
-        loading={loading}
-        starters={availableStarters}
-        onSelectStarter={handleStarterSelect}
-        onSendMessage={handleSendMessage}
-      />
+      <div className="flex min-w-0 flex-1 flex-col">
+        {(agentsError || capabilitiesError) && (
+          <div
+            role="alert"
+            className="border-b border-red-500/20 bg-red-500/10 px-5 py-2 text-xs text-red-300"
+          >
+            {agentsError ?? capabilitiesError}
+          </div>
+        )}
+
+        <ChatPanel
+          key={chatKey}
+          messages={messages}
+          loading={loading}
+          starters={availableStarters}
+          onSelectStarter={handleStarterSelect}
+          onSendMessage={handleSendMessage}
+        />
+      </div>
 
       <ExecutionLog
         events={events}
@@ -320,14 +519,17 @@ export default function Home() {
         }
       />
 
-      {showCreateTool && (
-        <CreateToolForm
-          onClose={() =>
-            setShowCreateTool(false)
-          }
-          onCreate={addTool}
+      {showAgentForm && (
+        <AgentForm
+          agent={editingAgent}
+          onClose={() => {
+            setShowAgentForm(false);
+            setEditingAgent(null);
+          }}
+          onSave={handleSaveAgent}
         />
       )}
     </main>
   );
 }
+  

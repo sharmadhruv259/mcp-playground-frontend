@@ -21,6 +21,8 @@ import {
 
 import type { StarterPrompt } from "@/constants/starters";
 import type { ChatMessage } from "@/types/chat";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface ChatPanelProps {
   messages?: ChatMessage[];
@@ -238,7 +240,54 @@ export default function ChatPanel({
                         : "border border-white/5 bg-white/[0.04] text-slate-200"
                     }`}
                   >
-                    {message.content}
+                    {isUser ? (
+  message.content
+) : (
+  <div className="space-y-3">
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        p: ({ children }) => (
+          <p className="leading-6">{children}</p>
+        ),
+        strong: ({ children }) => (
+          <strong className="font-semibold text-white">
+            {children}
+          </strong>
+        ),
+        ul: ({ children }) => (
+          <ul className="list-disc space-y-1 pl-5">
+            {children}
+          </ul>
+        ),
+        ol: ({ children }) => (
+          <ol className="list-decimal space-y-1 pl-5">
+            {children}
+          </ol>
+        ),
+        table: ({ children }) => (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-xs">
+              {children}
+            </table>
+          </div>
+        ),
+        th: ({ children }) => (
+          <th className="border border-slate-600 bg-slate-800 px-3 py-2 text-left">
+            {children}
+          </th>
+        ),
+        td: ({ children }) => (
+          <td className="border border-slate-700 px-3 py-2 text-left">
+            {children}
+          </td>
+        ),
+      }}
+    >
+      {message.content}
+    </ReactMarkdown>
+  </div>
+)}
                   </div>
 
                   {isUser && (

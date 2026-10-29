@@ -1,50 +1,98 @@
-
+**
+MCP Playground — Frontend
+**
 Final Project Video Link:  https://github.com/user-attachments/assets/1ffa8174-6b79-415c-9dba-23cb3ae8a800
 
+A modern, interactive Next.js frontend for experimenting with Model Context Protocol (MCP) tools, resources, and prompts through a Groq-powered AI agent backend.
 
+The application provides a three-panel workspace for creating and managing custom AI agents, selecting MCP operations, interacting through chat, and inspecting backend execution logs.
 
+Built with Next.js, React, TypeScript, Tailwind CSS, and Lucide React.
 
+1. Project Overview
 
-# MCP Playground — Frontend
+The MCP Playground frontend provides an interactive interface for a FastAPI backend powered by Groq and the Python MCP SDK.
 
-A modern Next.js frontend for experimenting with Model Context Protocol (MCP) tools, resources, and prompts through a Groq-powered backend agent. The application provides a responsive, three-panel workspace for configuring tools, conversing with the agent, and inspecting real-time backend execution logs.
+The application allows users to create custom agents with their own system instructions, select available MCP operations, and observe how the backend processes requests.
 
----
+The frontend communicates with the backend through REST APIs.
 
-## Key Features
+Key Features
 
-- **Flexible Tool Execution Modes**:
-  - **Auto Mode**: Allows the Groq-powered agent to dynamically select tools based on user input.
-  - **Manual Mode**: Exposes direct selection of specific built-in tools or user-defined custom tools.
-- **MCP Integrations**: Direct integration with project resources (`read_mcp_resource`) and reusable prompt templates (`get_mcp_prompt`) exposed by the backend MCP server.
-- **Custom Tool Builder**: Define custom tools directly in the UI with custom names, descriptions, input schemas, instructions, target MCP resource URIs, and MCP prompts with arguments.
-- **Agent Execution Panel**: Real-time inspection panel to track backend execution steps, resource reads, prompt retrievals, and model responses.
-- **Starter Cards**: Quick-launch common MCP test scenarios directly from the empty chat screen.
-- **Browser Persistence**: Custom tool definitions automatically persist locally using `localStorage` through the custom tools hook.
-- **Workspace Customization**: Collapsible sidebars and execution logs for tailored screen real estate.
+Custom AI Agents: Create, select, edit, and manage agents with different responsibilities and system prompts.
 
----
+Agent-Specific Configuration: Configure tool access, allowed MCP tools, and caching settings.
 
-## Tech Stack
+Auto Mode: Allow Groq to select relevant MCP operations based on the user's question.
 
-- **Framework**: [Next.js](https://nextjs.org/) (App Router)
-- **Language**: TypeScript
-- **Styling**: [Tailwind CSS](https://tailwindcss.com/)
-- **Icons**: [Lucide React](https://lucide.dev/)
-- **Backend API**: FastAPI (separate repository) powered by Groq LLM & Python MCP SDK
+Manual Mode: Select permitted MCP operations from the frontend.
 
----
+Dynamic MCP Discovery: Retrieve available tools, resources, and prompts from the backend.
 
-## Project Structure
+Interactive Chat: Ask questions using the selected custom agent.
 
-```text
+Agent Execution Panel: Inspect MCP operation execution, arguments, results, and errors returned by the backend.
+
+Starter Cards: Quickly begin common MCP test scenarios.
+
+Three-Panel Layout: Separate agent configuration, chat, and execution information.
+
+Custom agents are persisted by the backend using SQLite rather than being stored as custom tool definitions in browser localStorage.
+
+2. Technology Stack
+
+Technology
+
+Purpose
+
+Next.js (App Router)
+
+Frontend framework
+
+React
+
+UI components
+
+TypeScript
+
+Type safety
+
+Tailwind CSS
+
+Styling
+
+Lucide React
+
+Icons
+
+FastAPI
+
+Backend REST API
+
+Groq
+
+LLM-based tool selection and response generation
+
+FastMCP
+
+Backend MCP tools, resources, and prompts
+
+The backend is maintained in a separate repository: mcp-prompts-resources-poc.
+
+3. Project Structure
+
 mcp-playground-frontend/
+│
 ├── app/
+│   ├── favicon.ico
 │   ├── globals.css
 │   ├── layout.tsx
 │   └── page.tsx
+│
 ├── src/
 │   ├── components/
+│   │   ├── agents/
+│   │   │   └── AgentForm.tsx
 │   │   ├── chat/
 │   │   │   └── ChatPanel.tsx
 │   │   ├── execution/
@@ -52,157 +100,593 @@ mcp-playground-frontend/
 │   │   ├── layout/
 │   │   │   └── Sidebar.tsx
 │   │   └── tools/
-│   │       ├── CreateToolForm.tsx
 │   │       └── ToolSelector.tsx
+│   │
 │   ├── constants/
-│   │   ├── defaults.ts
 │   │   └── starters.ts
+│   │
 │   ├── hooks/
-│   │   └── useTools.ts
+│   │   ├── useAgents.ts
+│   │   └── useMCPCapabilities.ts
+│   │
 │   ├── lib/
 │   │   └── api.ts
-│   ├── types/
-│   │   ├── chat.ts
-│   │   └── tools.ts
-│   └── utils/
-│       └── toolValidation.ts
+│   │
+│   └── types/
+│       ├── agents.ts
+│       ├── chat.ts
+│       ├── mcp.ts
+│       └── tools.ts
+│
 ├── public/
 ├── .env.example
+├── .gitignore
 ├── package.json
+├── package-lock.json
+├── tsconfig.json
+├── next.config.ts
 └── README.md
-```
 
----
+File Responsibilities
 
-## Prerequisites
+File
 
-Before running the application, make sure you have:
+Responsibility
 
-- **Node.js** (v18.x or later recommended)
-- **npm**, **yarn**, or **pnpm** package manager
-- **MCP Playground FastAPI Backend** running (default: `http://localhost:8000`)
-- Backend environment properly configured with valid **Groq API key** and access to an active MCP server
+app/page.tsx
 
----
+Main application workspace and state coordination
 
-## Getting Started
+AgentForm.tsx
 
-### 1. Clone the Repository
-```bash
+Custom agent creation and editing
+
+ChatPanel.tsx
+
+Chat messages, question input, and starter cards
+
+ExecutionLog.tsx
+
+Displays backend execution events
+
+Sidebar.tsx
+
+Agent selection and workspace navigation
+
+ToolSelector.tsx
+
+MCP operation selection and execution mode controls
+
+useAgents.ts
+
+Retrieves and manages custom agents
+
+useMCPCapabilities.ts
+
+Fetches MCP capabilities from the backend
+
+api.ts
+
+Centralizes FastAPI requests
+
+starters.ts
+
+Defines starter questions
+
+agents.ts
+
+Agent-related TypeScript types
+
+chat.ts
+
+Chat request and response types
+
+mcp.ts
+
+MCP capability types
+
+tools.ts
+
+Tool selection and execution-related types
+
+4. Application Architecture
+
+                       USER
+                         |
+                         v
+                 Next.js Frontend
+                         |
+          +--------------+--------------+
+          |              |              |
+          v              v              v
+      Sidebar        ChatPanel      ExecutionLog
+          |              |              |
+          v              |              |
+      AgentForm          |              |
+      ToolSelector       |              |
+          |              |              |
+          +--------------+--------------+
+                         |
+                         v
+                    src/lib/api.ts
+                         |
+                         v
+                    FastAPI Backend
+                         |
+              +----------+----------+
+              |          |          |
+              v          v          v
+          Agents       Chat       Discovery
+              |          |          |
+              +----------+----------+
+                         |
+                         v
+                    Groq Agent
+                         |
+                         v
+                     MCP Client
+                         |
+                         v
+                     MCP Server
+                         |
+              +----------+----------+
+              |          |          |
+              v          v          v
+             Tools    Resources    Prompts
+                         |
+                         v
+                   API Response
+                         |
+                         v
+                 Chat + Execution Log
+
+The frontend does not directly execute MCP operations. It sends requests to FastAPI, which handles MCP discovery, agent execution, and tool invocation.
+
+5. Custom AI Agents
+
+The application supports creating and managing multiple custom agents.
+
+Each agent can have its own:
+
+Name and description.
+
+Custom system prompt.
+
+Tool access configuration.
+
+Allowed MCP tools.
+
+Cache settings.
+
+Agent configurations are stored by the backend using SQLite.
+
+Example Agent 1: Project Assistant
+
+Purpose: Answer general questions about project requirements, architecture, and objectives.
+
+Typical questions:
+
+What are the main project requirements?
+
+Give me a complete project overview.
+
+Explain the architecture in simple terms.
+
+Summarize the project requirements and architecture.
+
+Example Agent 2: Project Technical Analyst
+
+Purpose: Analyze the technical architecture and implementation requirements.
+
+Typical questions:
+
+Explain the project's technical components.
+
+Compare the requirements with the architecture.
+
+Identify potential technical limitations.
+
+Recommend architectural improvements.
+
+Creating a Custom Agent
+
+Open the agent creation interface from the sidebar.
+
+Enter the agent name and description.
+
+Provide a custom system prompt.
+
+Configure MCP tool access.
+
+Configure caching if needed.
+
+Save the agent.
+
+Select the agent and begin chatting.
+
+Example Custom System Prompt
+
+You are a Project Technical Analyst specializing in
+software architecture and requirements analysis.
+
+Your responsibilities:
+1. Analyze project requirements and architecture.
+2. Retrieve relevant information using MCP operations.
+3. Explain technical components and design decisions.
+4. Identify technical risks and limitations.
+5. Recommend practical improvements.
+
+Base factual claims on retrieved MCP information.
+Do not invent undocumented project features.
+
+Use the following response structure:
+1. Summary
+2. Key Findings
+3. Technical Explanation
+4. Sources Used
+
+6. MCP Capabilities
+
+The frontend retrieves available MCP capabilities from the backend.
+
+Native MCP Tools
+
+The backend currently exposes:
+
+get_project_overview
+
+The agent can execute it through the Groq-facing function:
+
+mcp_tool__get_project_overview
+
+MCP Resources
+
+Resource
+
+URI
+
+Project Requirements
+
+project://requirements
+
+Project Architecture
+
+project://architecture
+
+These resources contain project information maintained by the backend.
+
+MCP Prompts
+
+Prompt
+
+Purpose
+
+summarize_project
+
+Retrieve reusable project summarization instructions
+
+explain_technical
+
+Retrieve reusable technical explanation instructions
+
+The backend discovers the available capabilities and provides the relevant information to the frontend.
+
+7. Auto and Manual Modes
+
+Auto Mode
+
+Auto mode allows Groq to determine which available MCP operations should be used.
+
+Example question:
+
+Read both project resources and explain how the
+architecture supports the project requirements.
+
+The backend may execute multiple MCP operations before returning the final response.
+
+Manual Mode
+
+Manual mode allows users to select MCP operations through the frontend.
+
+To use Manual mode:
+
+Select the required agent.
+
+Switch from Auto to Manual.
+
+Choose the relevant MCP operation.
+
+Enter a question.
+
+Inspect the execution log.
+
+Current limitation: Manual mode restricts available native MCP tools but does not force Groq to call the selected tool. Resource and prompt selections are not yet fully enforced.
+
+8. Chat Interface
+
+The chat interface allows users to submit questions to the selected custom agent.
+
+The backend processes each request using:
+
+The selected agent configuration.
+
+The agent's custom system prompt.
+
+Available MCP capabilities.
+
+Groq function calling.
+
+MCP execution results.
+
+The final response is displayed in the chat panel.
+
+Starter Cards
+
+Starter cards provide example questions for testing MCP capabilities.
+
+Examples include:
+
+Retrieve project requirements.
+
+Explain project architecture.
+
+Generate a project overview.
+
+Retrieve reusable MCP prompt instructions.
+
+9. Agent Execution Panel
+
+The execution panel displays execution information returned by the backend.
+
+Depending on the request, this may include:
+
+MCP operation selection.
+
+Function arguments.
+
+MCP tool execution.
+
+Resource retrieval.
+
+Prompt retrieval.
+
+Cache-related events.
+
+Execution errors.
+
+Agent response generation.
+
+The execution panel is intended to help users understand how the backend agent processes a question.
+
+Execution information is returned through the API rather than a dedicated WebSocket stream.
+
+10. Backend API Integration
+
+The frontend communicates with FastAPI through src/lib/api.ts.
+
+Main API Endpoints
+
+Endpoint
+
+Purpose
+
+GET /api/mcp/capabilities
+
+Retrieve available MCP capabilities
+
+/api/agents
+
+Create, retrieve, update, and delete custom agents
+
+POST /api/chat
+
+Submit questions to the selected agent
+
+The backend also provides interactive API documentation at:
+
+http://localhost:8000/docs
+
+11. Prerequisites
+
+Before running the frontend, ensure that you have:
+
+Node.js and npm installed.
+
+The MCP Playground FastAPI backend available.
+
+A valid Groq API key configured on the backend.
+
+Backend dependencies installed.
+
+The backend MCP server registered and accessible through FastAPI.
+
+The current backend uses an in-process MCP connection, so a separate MCP server terminal is not required.
+
+12. Installation
+
+Step 1: Clone the Frontend Repository
+
 git clone <your-frontend-repository-url>
 cd mcp-playground-frontend
-```
 
-### 2. Install Dependencies
-```bash
+Step 2: Install Dependencies
+
 npm install
-```
 
-### 3. Environment Configuration
-Create a local environment configuration file from the provided template:
+Step 3: Configure Environment Variables
 
-```bash
+Copy the environment template:
+
 cp .env.example .env.local
-```
 
-Ensure `.env.local` specifies your backend API address:
-```env
+Configure the backend URL:
+
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
-```
 
-> **Security Note**: Never expose sensitive keys (such as `GROQ_API_KEY`) on the frontend or put them inside `NEXT_PUBLIC_` variables. API keys must remain securely stored on the backend service.
+Ensure the variable name matches the one used by src/lib/api.ts.
 
-### 4. Run Development Server
-Ensure the FastAPI backend server is running in a separate terminal session, then launch the frontend:
+Security: Keep GROQ_API_KEY on the backend. Never place private API keys inside frontend environment variables prefixed with NEXT_PUBLIC_.
 
-```bash
+Step 4: Start the Backend
+
+In a separate terminal:
+
+cd mcp-prompts-resources-poc
+source .venv/bin/activate
+uvicorn api:app --reload
+
+The backend should be accessible at:
+
+http://localhost:8000
+
+Step 5: Start the Frontend
+
 npm run dev
-```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser to start using the playground.
+Open:
 
----
+http://localhost:3000
 
-## How to Use
+13. Testing
 
-### 1. Chat in Auto Mode
-1. Select **Auto** in the left sidebar.
-2. Submit a request (e.g., *"Explain the project's requirements and architecture."*).
-3. The backend agent will autonomously determine which tools to invoke.
-4. View the step-by-step tool invocation process inside the **Agent Execution** panel on the right.
+The frontend can be tested with two custom agents: Project Assistant and Project Technical Analyst.
 
-### 2. Chat in Manual Mode
-1. Select **Manual** in the left sidebar.
-2. Pick a built-in or custom tool from the selector dropdown:
-   - `read_mcp_resource`: Read project resources directly from the MCP server.
-   - `get_mcp_prompt`: Fetch pre-configured prompt instructions from the MCP server.
-3. Submit your targeted question.
+Project Assistant Tests
 
-### 3. Creating Custom Tools
-1. Click **Create New Tool** in the left sidebar.
-2. Configure your tool:
-   - **Tool Name** & **Description**
-   - **Input Parameters** (name, type, description, required toggle)
-   - **Custom Instructions** (system instructions guiding response structure)
-   - **MCP Resources** (e.g., `project://requirements`, `project://architecture`)
-   - **MCP Prompt & Arguments** (e.g., `explain_technical` with `audience: developer`)
-3. Click **Save Tool**.
-4. Switch execution mode to **Manual**, select your new custom tool, and ask a relevant query.
+Test 1 — Project Overview
 
-> **Note**: Custom tools defined in the frontend are client-side metadata definitions passed alongside execution requests; they do not automatically inject python code onto the backend server.
+Give me a complete overview of this project
+using the available MCP tool.
 
-### 4. Starter Cards
-When starting on a blank chat screen, click any of the available starter cards to automatically configure the intended tool/mode and populate the input field.
+Expected: The backend executes get_project_overview.
 
-### 5. Inspect Execution Activity
-Monitor the **Agent Execution** panel on the right side of the screen to observe raw events emitted during execution, such as:
-- Resource URI fetching
-- MCP Prompt retrieval
-- Context assembly
-- Model completion responses
+Test 2 — Requirements Resource
 
----
+What are the main requirements of this project?
 
-## Example Custom Tool Setup
+Expected: The backend retrieves the requirements resource.
 
-| Field | Value |
-| :--- | :--- |
-| **Name** | `project_review_assistant` |
-| **Description** | Reviews project requirements and architecture, identifies strengths and improvements, and generates structured recommendations using MCP context. |
-| **Input Parameter** | `question` (string, required) |
-| **MCP Resources** | `project://requirements`, `project://architecture` |
-| **MCP Prompt** | `explain_technical` (`audience: developer`) |
+Test 3 — MCP Prompt
 
-#### Custom System Prompt:
-```text
-You are a project review assistant. Use the supplied MCP context to:
-1. Summarize the project's purpose and requirements.
-2. Explain its architecture and MCP integration.
-3. Identify strengths and limitations.
-4. Recommend three practical improvements.
+Retrieve the summarize_project MCP prompt
+and show its instructions.
 
-Base factual claims on retrieved context. Do not invent undocumented features.
-Distinguish documented facts from recommendations. Adjust technical depth for the selected audience.
-```
+Expected: The backend retrieves the selected MCP prompt.
 
----
+Project Technical Analyst Tests
 
-## Verification & Building
+Test 1 — Technical Architecture
 
-To verify code quality and build for production:
+Analyze the project's architecture and explain
+its major technical components.
 
-```bash
-# Type check TypeScript files
+Expected: The backend retrieves relevant architecture information.
+
+Test 2 — Requirements Comparison
+
+Compare the project requirements with the
+architecture and identify potential gaps.
+
+Expected: The backend retrieves the relevant resources and performs a grounded comparison.
+
+Test 3 — Multi-Operation Execution
+
+Use the project overview tool, read both project
+resources, and provide a detailed technical analysis.
+
+Expected: The backend executes multiple relevant MCP operations.
+
+Multi-Agent Switching
+
+Switch between the two agents and verify:
+
+Each agent follows its own system prompt.
+
+Agent configuration changes are reflected correctly.
+
+Tool permissions remain agent-specific.
+
+The execution log corresponds to the selected agent's request.
+
+Out-of-Scope Questions
+
+Example:
+
+Write a poem about the ocean.
+
+Desired response:
+
+Out of scope: This question is outside the selected
+agent's responsibilities. Please ask a question
+related to this agent's purpose or select a more
+suitable agent.
+
+Implementation note: Strict out-of-scope enforcement is planned. The current implementation should not be assumed to reject all unrelated questions until backend validation is implemented and tested.
+
+14. Code Verification
+
+Run the following commands from the frontend directory.
+
+TypeScript Validation
+
 npx tsc --noEmit
 
-# Run ESLint (if configured)
+ESLint
+
 npm run lint
 
-# Build production distribution
+Production Build
+
 npm run build
 
-# Start production server
-npm run start
-```
+Start Production Server
 
----
+npm run start
+
+These commands help verify that the frontend compiles and can be built successfully.
+
+15. Known Limitations
+
+The MCP Playground is a proof of concept.
+
+Current limitations include:
+
+Manual mode does not guarantee execution of the selected MCP operation.
+
+Resource and prompt selection restrictions are not fully enforced.
+
+Strict out-of-scope validation is not yet implemented.
+
+The frontend depends on a running FastAPI backend.
+
+Execution logs are returned through API responses rather than live WebSocket streaming.
+
+Production authentication and deployment are outside the current scope.
+
+16. Future Improvements
+
+Potential enhancements include:
+
+Strict out-of-scope validation for custom agents.
+
+Full Manual mode enforcement.
+
+Improved multi-agent testing and isolation.
+
+Support for additional MCP servers.
+
+Enhanced execution event streaming.
+
+Better agent permission management.
+
+More detailed error handling.
+
+Production deployment and authentication.
+
+17. Conclusion
+
+The MCP Playground frontend provides a configurable interface for experimenting with MCP-enabled AI agents.
+
+By combining Next.js, FastAPI, Groq, and FastMCP, the project demonstrates custom agent management, dynamic MCP discovery, automated tool selection, resource retrieval, prompt execution, and agent execution inspection.
+
+The frontend and backend are maintained as separate repositories, allowing both applications to evolve independently.

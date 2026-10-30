@@ -41,8 +41,11 @@ const PROMPT_FUNCTION = "get_mcp_prompt";
 /**
  * Convert a frontend MCP tool name into its native name.
  *
- * Native MCP tools are stored without the Groq prefix.
- * Resources and prompts are separate MCP operations.
+ * Args:
+ *     toolName (string | null): Frontend tool name.
+ *
+ * Returns:
+ *     string | null: Native MCP tool name.
  */
 function getNativeMCPToolName(
   toolName: string | null
@@ -63,8 +66,13 @@ function getNativeMCPToolName(
 }
 
 /**
- * Convert a saved native MCP tool name into its
- * frontend display name.
+ * Convert a native MCP tool name into its frontend name.
+ *
+ * Args:
+ *     nativeName (string | null): Native MCP tool name.
+ *
+ * Returns:
+ *     string | null: Frontend MCP tool name.
  */
 function getFrontendMCPToolName(
   nativeName: string | null
@@ -93,22 +101,25 @@ export default function Home() {
   const [editingAgent, setEditingAgent] =
     useState<AgentConfig | null>(null);
 
-  // Chat request loading state.
+  // Chat state.
   const [loading, setLoading] = useState(false);
   const [chatKey, setChatKey] = useState(0);
 
+  // MCP tool selection state.
   const [mode, setMode] =
     useState<ToolMode>("auto");
 
   const [selectedTool, setSelectedTool] =
     useState<string | null>(null);
 
+  // Conversation and execution logs.
   const [messages, setMessages] =
     useState<ChatMessage[]>([]);
 
   const [events, setEvents] =
     useState<ExecutionEvent[]>([]);
 
+  // Track active requests to prevent stale responses.
   const requestIdRef = useRef(0);
   const loadingRef = useRef(false);
 
@@ -125,7 +136,7 @@ export default function Home() {
     removeAgent,
   } = useAgents();
 
-  // Discover MCP capabilities from the backend.
+  // Discover available MCP capabilities.
   const {
     capabilities,
     loading: capabilitiesLoading,
@@ -133,18 +144,26 @@ export default function Home() {
   } = useMCPCapabilities();
 
   /*
-   * Show the full-screen loader while either
-   * initialization request is still running.
-   *
-   * This state is independent of chat loading.
+   * Display the full-screen loader while initial
+   * backend requests are running.
    */
   const isInitializing =
     agentsLoading || capabilitiesLoading;
 
-  // Adapt discovered MCP operations to the sidebar.
+  /*
+   * When no custom agent is selected,
+   * use the built-in Default Assistant.
+   */
+  const isDefaultAssistant = !selectedAgent;
+
+  /*
+   * Convert discovered MCP capabilities into
+   * frontend tool definitions.
+   */
   const availableTools = useMemo<ToolDefinition[]>(() => {
     const tools: ToolDefinition[] = [];
 
+    // Native MCP tools.
     for (const tool of capabilities.tools) {
       tools.push({
         name: `${MCP_TOOL_PREFIX}${tool.name}`,
@@ -159,6 +178,7 @@ export default function Home() {
       });
     }
 
+    // MCP resources.
     if (capabilities.resources.length > 0) {
       tools.push({
         name: RESOURCE_FUNCTION,
@@ -173,6 +193,7 @@ export default function Home() {
       });
     }
 
+    // MCP prompts.
     if (capabilities.prompts.length > 0) {
       tools.push({
         name: PROMPT_FUNCTION,
@@ -190,7 +211,10 @@ export default function Home() {
     return tools;
   }, [capabilities]);
 
-  // Restore tool permissions when switching saved agents.
+  /*
+   * Restore saved tool permissions when switching
+   * between custom agents.
+   */
   useEffect(() => {
     if (!selectedAgent) {
       setMode("auto");
@@ -215,6 +239,12 @@ export default function Home() {
     }
   }, [selectedAgentId, selectedAgent]);
 
+  /**
+   * Reset the active conversation.
+   *
+   * Returns:
+   *     void: Clears messages and execution logs.
+   */
   function resetConversation(): void {
     requestIdRef.current += 1;
     loadingRef.current = false;
@@ -222,18 +252,35 @@ export default function Home() {
     setLoading(false);
     setMessages([]);
     setEvents([]);
+
     setChatKey((previous) => previous + 1);
   }
 
+  /**
+   * Start a new conversation.
+   */
   function handleNewChat(): void {
     resetConversation();
   }
 
+  /**
+   * Switch between the Default Assistant and custom agents.
+   *
+   * Args:
+   *     agentId (string): Selected agent ID or empty string.
+   */
   function handleAgentChange(agentId: string): void {
     resetConversation();
+
     setSelectedAgentId(agentId || null);
   }
 
+  /**
+   * Change MCP tool selection mode.
+   *
+   * Args:
+   *     value (ToolMode): Auto or manual mode.
+   */
   function handleModeChange(value: ToolMode): void {
     setMode(value);
 
@@ -242,6 +289,18 @@ export default function Home() {
     }
   }
 
+  /**
+   * Create or update a saved custom agent.
+   *
+   * Args:
+   *     input (AgentConfig): Agent configuration.
+   *
+   * Returns:
+   *     Promise<void>: Completes after saving.
+   *
+   * Raises:
+   *     Error: If the backend request fails.
+   */
   async function handleSaveAgent(
     input: AgentConfig
   ): Promise<void> {
@@ -254,6 +313,12 @@ export default function Home() {
     resetConversation();
   }
 
+  /**
+   * Delete the currently selected custom agent.
+   *
+   * Returns:
+   *     Promise<void>: Completes after deletion.
+   */
   async function handleDeleteAgent(): Promise<void> {
     if (!selectedAgent) {
       return;
@@ -269,6 +334,7 @@ export default function Home() {
 
     try {
       await removeAgent(selectedAgent.id);
+
       resetConversation();
     } catch (error) {
       window.alert(
@@ -279,6 +345,19 @@ export default function Home() {
     }
   }
 
+  /**
+   * Send a message to the Default Assistant or custom agent.
+   *
+   * Args:
+   *     message (string): User's message.
+   *     override (object): Optional MCP tool selection override.
+   *
+   * Returns:
+   *     Promise<void>: Updates the chat and execution logs.
+   *
+   * Raises:
+   *     Error: Backend failures are handled in the chat UI.
+   */
   async function handleSendMessage(
     message: string,
     override?: {
@@ -305,6 +384,7 @@ export default function Home() {
     setLoading(true);
     setEvents([]);
 
+    // Display the user's message immediately.
     setMessages((previous) => [
       ...previous,
       {
@@ -315,12 +395,48 @@ export default function Home() {
     ]);
 
     try {
+      /*
+       * DEFAULT ASSISTANT
+       *
+       * No custom agent is selected.
+       *
+       * Send only the user message.
+       * The backend handles general chat through Groq.
+       *
+       * No MCP tools are executed.
+       */
       if (!selectedAgent) {
-        throw new Error(
-          "Create or select an agent before chatting."
+        const result = await sendChatMessage(
+          trimmed,
+          null
         );
+
+        // Ignore responses from previous conversations.
+        if (requestId !== requestIdRef.current) {
+          return;
+        }
+
+        setMessages((previous) => [
+          ...previous,
+          {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: result.answer,
+          },
+        ]);
+
+        // Default Assistant normally returns no MCP events.
+        setEvents(result.events ?? []);
+
+        return;
       }
 
+      /*
+       * CUSTOM MCP AGENT
+       *
+       * Preserve the original Auto/Manual tool
+       * selection and permission behavior.
+       */
       if (
         activeMode === "manual" &&
         (!activeTool ||
@@ -340,12 +456,11 @@ export default function Home() {
           : null;
 
       /*
-       * Backend allowed_tools contains only native
-       * MCP tool names.
+       * Backend allowed_tools stores native MCP
+       * tool names without the Groq prefix.
        *
-       * Built-in resource/prompt operations are not
-       * native MCP tools, so they cannot be placed
-       * inside allowed_tools.
+       * Resources and prompts are separate
+       * MCP operations.
        */
       const updatedConfig: AgentConfig = {
         ...selectedAgent,
@@ -359,7 +474,10 @@ export default function Home() {
             : [],
       };
 
-      // Persist permissions before invoking the agent.
+      /*
+       * Save permission changes before invoking
+       * the selected custom agent.
+       */
       if (
         updatedConfig.tool_access !==
           selectedAgent.tool_access ||
@@ -369,17 +487,21 @@ export default function Home() {
         await editAgent(updatedConfig);
       }
 
-      // Execute chat using the saved agent ID.
+      /*
+       * Send the message using the selected
+       * custom agent's saved ID.
+       */
       const result = await sendChatMessage(
         trimmed,
         selectedAgent.id
       );
 
-      // Ignore stale responses after chat resets.
+      // Ignore responses from previous conversations.
       if (requestId !== requestIdRef.current) {
         return;
       }
 
+      // Display the assistant's answer.
       setMessages((previous) => [
         ...previous,
         {
@@ -389,6 +511,7 @@ export default function Home() {
         },
       ]);
 
+      // Display MCP execution events.
       setEvents(result.events ?? []);
     } catch (error) {
       if (requestId !== requestIdRef.current) {
@@ -400,15 +523,17 @@ export default function Home() {
           ? error.message
           : "An unexpected error occurred.";
 
+      // Display a readable error message.
       setMessages((previous) => [
         ...previous,
         {
           id: crypto.randomUUID(),
           role: "assistant",
-          content: `No agent selected \n Please ${description}`,
+          content: `Request failed: ${description}`,
         },
       ]);
 
+      // Record backend failures in the execution panel.
       setEvents([
         {
           id: crypto.randomUUID(),
@@ -425,6 +550,15 @@ export default function Home() {
     }
   }
 
+  /**
+   * Execute a predefined starter question.
+   *
+   * Args:
+   *     starter (StarterPrompt): Selected starter question.
+   *
+   * Returns:
+   *     void: Sends the predefined question.
+   */
   function handleStarterSelect(
     starter: StarterPrompt
   ): void {
@@ -436,6 +570,22 @@ export default function Home() {
       ? "manual"
       : "auto";
 
+    /*
+     * Default Assistant does not have MCP access.
+     *
+     * Preserve the starter question, but do not
+     * activate MCP tool selection.
+     */
+    if (isDefaultAssistant) {
+      void handleSendMessage(starter.prompt, {
+        mode: "auto",
+        selectedTool: null,
+      });
+
+      return;
+    }
+
+    // Custom agents use the original starter behavior.
     setMode(nextMode);
     setSelectedTool(starter.tool);
 
@@ -445,6 +595,15 @@ export default function Home() {
     });
   }
 
+  /*
+   * RESTORE ORIGINAL PREDEFINED QUESTIONS
+   *
+   * Do not hide MCP starter questions when the
+   * Default Assistant is selected.
+   *
+   * This restores the original starter cards
+   * based on the STARTER_PROMPTS configuration.
+   */
   const availableStarters = STARTER_PROMPTS.filter(
     (starter) =>
       starter.tool === null ||
@@ -455,10 +614,10 @@ export default function Home() {
 
   return (
     <main className="flex h-screen overflow-hidden bg-slate-950">
-
-      {/* Full-screen centered initialization loader */}
+      {/* Full-screen initialization loader */}
       {isInitializing && <FullScreenLoader />}
 
+      {/* Left sidebar */}
       <Sidebar
         collapsed={sidebarCollapsed}
         mode={mode}
@@ -473,7 +632,9 @@ export default function Home() {
           setShowAgentForm(true);
         }}
         onEditAgent={() => {
-          if (!selectedAgent) return;
+          if (!selectedAgent) {
+            return;
+          }
 
           setEditingAgent(selectedAgent);
           setShowAgentForm(true);
@@ -491,6 +652,7 @@ export default function Home() {
         onToolChange={setSelectedTool}
       />
 
+      {/* Center chat panel */}
       <div className="flex min-w-0 flex-1 flex-col">
         {(agentsError || capabilitiesError) && (
           <div
@@ -511,6 +673,7 @@ export default function Home() {
         />
       </div>
 
+      {/* Right execution log panel */}
       <ExecutionLog
         events={events}
         collapsed={logCollapsed}
@@ -521,6 +684,7 @@ export default function Home() {
         }
       />
 
+      {/* Agent creation/editing modal */}
       {showAgentForm && (
         <AgentForm
           agent={editingAgent}

@@ -3,9 +3,10 @@ import type { AgentConfig } from "@/types/agents";
 import type { ExecutionEvent } from "@/types/chat";
 import type { MCPCapabilities } from "@/types/mcp";
 
-const API_BASE_URL =
+const API_BASE_URL = (
   process.env.NEXT_PUBLIC_API_URL ??
-  "http://localhost:8000";
+  "http://localhost:8000"
+).replace(/\/+$/, "");
 
 export interface ChatResponse {
   answer: string;
@@ -14,7 +15,7 @@ export interface ChatResponse {
 
 interface ChatRequest {
   message: string;
-  agent_id: string;
+  agent_id?: string;
 }
 
 /**
@@ -211,11 +212,18 @@ export async function deleteAgent(
 }
 
 /**
- * Send a message to a saved custom agent.
+ * Send a message to the Default Assistant or custom agent.
+ *
+ * When no agent ID is provided, the backend uses the
+ * built-in Default Assistant without MCP tools.
+ *
+ * When an agent ID is provided, the backend executes
+ * the selected custom MCP-enabled agent.
  *
  * Args:
- *     message (string): User's question.
- *     agentId (string): Selected saved agent ID.
+ *     message (string): User's message.
+ *     agentId (string | null): Saved agent ID or null
+ *         for the Default Assistant.
  *
  * Returns:
  *     Promise<ChatResponse>: Answer and execution events.
@@ -225,12 +233,16 @@ export async function deleteAgent(
  */
 export async function sendChatMessage(
   message: string,
-  agentId: string
+  agentId: string | null = null
 ): Promise<ChatResponse> {
   const payload: ChatRequest = {
     message,
-    agent_id: agentId,
   };
+
+  // Include agent_id only when a custom agent is selected.
+  if (agentId !== null) {
+    payload.agent_id = agentId;
+  }
 
   return apiRequest<ChatResponse>(
     "/api/chat",

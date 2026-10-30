@@ -12,6 +12,7 @@ import Sidebar from "@/components/layout/Sidebar";
 import ChatPanel from "@/components/chat/ChatPanel";
 import ExecutionLog from "@/components/execution/ExecutionLog";
 import AgentForm from "@/components/agents/AgentForm";
+import FullScreenLoader from "@/components/layout/FullScreenLoader";
 
 import {
   STARTER_PROMPTS,
@@ -32,12 +33,10 @@ import type {
   ToolMode,
 } from "@/types/tools";
 
-
 const MCP_TOOL_PREFIX = "mcp_tool__";
 
 const RESOURCE_FUNCTION = "read_mcp_resource";
 const PROMPT_FUNCTION = "get_mcp_prompt";
-
 
 /**
  * Convert a frontend MCP tool name into its native name.
@@ -63,7 +62,6 @@ function getNativeMCPToolName(
   return nativeName || null;
 }
 
-
 /**
  * Convert a saved native MCP tool name into its
  * frontend display name.
@@ -82,7 +80,6 @@ function getFrontendMCPToolName(
   return `${MCP_TOOL_PREFIX}${nativeName}`;
 }
 
-
 export default function Home() {
   const [sidebarCollapsed, setSidebarCollapsed] =
     useState(false);
@@ -96,6 +93,7 @@ export default function Home() {
   const [editingAgent, setEditingAgent] =
     useState<AgentConfig | null>(null);
 
+  // Chat request loading state.
   const [loading, setLoading] = useState(false);
   const [chatKey, setChatKey] = useState(0);
 
@@ -114,6 +112,7 @@ export default function Home() {
   const requestIdRef = useRef(0);
   const loadingRef = useRef(false);
 
+  // Load saved agents from the backend.
   const {
     agents,
     selectedAgent,
@@ -126,11 +125,21 @@ export default function Home() {
     removeAgent,
   } = useAgents();
 
+  // Discover MCP capabilities from the backend.
   const {
     capabilities,
+    loading: capabilitiesLoading,
     error: capabilitiesError,
   } = useMCPCapabilities();
 
+  /*
+   * Show the full-screen loader while either
+   * initialization request is still running.
+   *
+   * This state is independent of chat loading.
+   */
+  const isInitializing =
+    agentsLoading || capabilitiesLoading;
 
   // Adapt discovered MCP operations to the sidebar.
   const availableTools = useMemo<ToolDefinition[]>(() => {
@@ -181,7 +190,6 @@ export default function Home() {
     return tools;
   }, [capabilities]);
 
-
   // Restore tool permissions when switching saved agents.
   useEffect(() => {
     if (!selectedAgent) {
@@ -207,7 +215,6 @@ export default function Home() {
     }
   }, [selectedAgentId, selectedAgent]);
 
-
   function resetConversation(): void {
     requestIdRef.current += 1;
     loadingRef.current = false;
@@ -218,17 +225,14 @@ export default function Home() {
     setChatKey((previous) => previous + 1);
   }
 
-
   function handleNewChat(): void {
     resetConversation();
   }
-
 
   function handleAgentChange(agentId: string): void {
     resetConversation();
     setSelectedAgentId(agentId || null);
   }
-
 
   function handleModeChange(value: ToolMode): void {
     setMode(value);
@@ -237,7 +241,6 @@ export default function Home() {
       setSelectedTool(null);
     }
   }
-
 
   async function handleSaveAgent(
     input: AgentConfig
@@ -250,7 +253,6 @@ export default function Home() {
 
     resetConversation();
   }
-
 
   async function handleDeleteAgent(): Promise<void> {
     if (!selectedAgent) {
@@ -276,7 +278,6 @@ export default function Home() {
       );
     }
   }
-
 
   async function handleSendMessage(
     message: string,
@@ -424,7 +425,6 @@ export default function Home() {
     }
   }
 
-
   function handleStarterSelect(
     starter: StarterPrompt
   ): void {
@@ -445,7 +445,6 @@ export default function Home() {
     });
   }
 
-
   const availableStarters = STARTER_PROMPTS.filter(
     (starter) =>
       starter.tool === null ||
@@ -454,9 +453,12 @@ export default function Home() {
       )
   );
 
-
   return (
     <main className="flex h-screen overflow-hidden bg-slate-950">
+
+      {/* Full-screen centered initialization loader */}
+      {isInitializing && <FullScreenLoader />}
+
       <Sidebar
         collapsed={sidebarCollapsed}
         mode={mode}
@@ -532,4 +534,3 @@ export default function Home() {
     </main>
   );
 }
-  

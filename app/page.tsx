@@ -404,7 +404,7 @@ export default function Home() {
         {
           id: crypto.randomUUID(),
           role: "assistant",
-          content: `Backend error: ${description}`,
+          content: `No agent selected \n Please ${description}`,
         },
       ]);
 

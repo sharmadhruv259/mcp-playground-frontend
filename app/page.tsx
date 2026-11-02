@@ -21,6 +21,7 @@ import {
 
 import { useAgents } from "@/hooks/useAgents";
 import { useMCPCapabilities } from "@/hooks/useMCPCapabilities";
+import { useLoadingPrediction } from "@/hooks/useLoadingPrediction";
 import { sendChatMessage } from "@/lib/api";
 
 import type { AgentConfig } from "@/types/agents";
@@ -149,6 +150,22 @@ export default function Home() {
    */
   const isInitializing =
     agentsLoading || capabilitiesLoading;
+
+  /*
+   * HISTORICAL LOADING-TIME PREDICTION
+   *
+   * Predict the total initialization duration
+   * using previously successful loads.
+   *
+   * The hook observes the existing initialization
+   * state and does not make additional API requests.
+   */
+  const loadingPrediction = useLoadingPrediction({
+    isInitializing,
+    hasError: Boolean(
+      agentsError || capabilitiesError
+    ),
+  });
 
   /*
    * When no custom agent is selected,
@@ -399,10 +416,7 @@ export default function Home() {
        * DEFAULT ASSISTANT
        *
        * No custom agent is selected.
-       *
-       * Send only the user message.
        * The backend handles general chat through Groq.
-       *
        * No MCP tools are executed.
        */
       if (!selectedAgent) {
@@ -411,7 +425,6 @@ export default function Home() {
           null
         );
 
-        // Ignore responses from previous conversations.
         if (requestId !== requestIdRef.current) {
           return;
         }
@@ -425,7 +438,6 @@ export default function Home() {
           },
         ]);
 
-        // Default Assistant normally returns no MCP events.
         setEvents(result.events ?? []);
 
         return;
@@ -434,8 +446,8 @@ export default function Home() {
       /*
        * CUSTOM MCP AGENT
        *
-       * Preserve the original Auto/Manual tool
-       * selection and permission behavior.
+       * Preserve Auto/Manual tool selection
+       * and permission behavior.
        */
       if (
         activeMode === "manual" &&
@@ -449,7 +461,6 @@ export default function Home() {
         );
       }
 
-      // Convert frontend tool names to native MCP names.
       const nativeToolName =
         activeMode === "manual"
           ? getNativeMCPToolName(activeTool)
@@ -458,9 +469,6 @@ export default function Home() {
       /*
        * Backend allowed_tools stores native MCP
        * tool names without the Groq prefix.
-       *
-       * Resources and prompts are separate
-       * MCP operations.
        */
       const updatedConfig: AgentConfig = {
         ...selectedAgent,
@@ -496,12 +504,10 @@ export default function Home() {
         selectedAgent.id
       );
 
-      // Ignore responses from previous conversations.
       if (requestId !== requestIdRef.current) {
         return;
       }
 
-      // Display the assistant's answer.
       setMessages((previous) => [
         ...previous,
         {
@@ -511,7 +517,6 @@ export default function Home() {
         },
       ]);
 
-      // Display MCP execution events.
       setEvents(result.events ?? []);
     } catch (error) {
       if (requestId !== requestIdRef.current) {
@@ -523,7 +528,6 @@ export default function Home() {
           ? error.message
           : "An unexpected error occurred.";
 
-      // Display a readable error message.
       setMessages((previous) => [
         ...previous,
         {
@@ -533,7 +537,6 @@ export default function Home() {
         },
       ]);
 
-      // Record backend failures in the execution panel.
       setEvents([
         {
           id: crypto.randomUUID(),
@@ -572,9 +575,8 @@ export default function Home() {
 
     /*
      * Default Assistant does not have MCP access.
-     *
-     * Preserve the starter question, but do not
-     * activate MCP tool selection.
+     * Preserve the starter question without
+     * activating MCP tool selection.
      */
     if (isDefaultAssistant) {
       void handleSendMessage(starter.prompt, {
@@ -585,7 +587,6 @@ export default function Home() {
       return;
     }
 
-    // Custom agents use the original starter behavior.
     setMode(nextMode);
     setSelectedTool(starter.tool);
 
@@ -596,13 +597,7 @@ export default function Home() {
   }
 
   /*
-   * RESTORE ORIGINAL PREDEFINED QUESTIONS
-   *
-   * Do not hide MCP starter questions when the
-   * Default Assistant is selected.
-   *
-   * This restores the original starter cards
-   * based on the STARTER_PROMPTS configuration.
+   * Preserve all original predefined questions.
    */
   const availableStarters = STARTER_PROMPTS.filter(
     (starter) =>
@@ -614,8 +609,20 @@ export default function Home() {
 
   return (
     <main className="flex h-screen overflow-hidden bg-slate-950">
-      {/* Full-screen initialization loader */}
-      {isInitializing && <FullScreenLoader />}
+      {/* Full-screen initialization loader with ETA */}
+      {isInitializing && (
+        <FullScreenLoader
+          estimatedRemainingSeconds={
+            loadingPrediction.estimatedRemainingSeconds
+          }
+          predictedTotalSeconds={
+            loadingPrediction.predictedTotalSeconds
+          }
+          isOverEstimate={
+            loadingPrediction.isOverEstimate
+          }
+        />
+      )}
 
       {/* Left sidebar */}
       <Sidebar

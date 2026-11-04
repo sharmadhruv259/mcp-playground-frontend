@@ -1,4 +1,3 @@
-
 "use client";
 
 import {
@@ -8,11 +7,17 @@ import {
   useState,
 } from "react";
 
+import { AlertTriangle, LogIn } from "lucide-react";
+
+import LoginModal from "@/components/auth/LoginModal";
+import { useAuth } from "@/context/AuthContext";
+import { getAccessToken } from "@/lib/auth";
 import Sidebar from "@/components/layout/Sidebar";
 import ChatPanel from "@/components/chat/ChatPanel";
 import ExecutionLog from "@/components/execution/ExecutionLog";
 import AgentForm from "@/components/agents/AgentForm";
 import FullScreenLoader from "@/components/layout/FullScreenLoader";
+import RolePortal from "@/components/layout/RolePortal";
 
 import {
   STARTER_PROMPTS,
@@ -38,6 +43,7 @@ const MCP_TOOL_PREFIX = "mcp_tool__";
 
 const RESOURCE_FUNCTION = "read_mcp_resource";
 const PROMPT_FUNCTION = "get_mcp_prompt";
+
 
 /**
  * Convert a frontend MCP tool name into its native name.
@@ -89,7 +95,10 @@ function getFrontendMCPToolName(
   return `${MCP_TOOL_PREFIX}${nativeName}`;
 }
 
-export default function Home() {
+function Playground() {
+  const { user, isAuthenticated, isLoading: authLoading, logout } = useAuth();
+  const [loginOpen, setLoginOpen] = useState(false);
+  const pendingMessageRef = useRef<{message: string; override?: {mode: ToolMode; selectedTool: string | null}} | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] =
     useState(false);
 
@@ -101,6 +110,12 @@ export default function Home() {
 
   const [editingAgent, setEditingAgent] =
     useState<AgentConfig | null>(null);
+
+  // Preserve the saved agent ID if a review submission must be retried.
+  const pendingSubmissionRef = useRef<{
+    id: string;
+    payload: string;
+  } | null>(null);
 
   // Chat state.
   const [loading, setLoading] = useState(false);
@@ -125,17 +140,29 @@ export default function Home() {
   const loadingRef = useRef(false);
 
   // Load saved agents from the backend.
-  const {
-    agents,
-    selectedAgent,
-    selectedAgentId,
-    setSelectedAgentId,
-    loading: agentsLoading,
-    error: agentsError,
-    addAgent,
-    editAgent,
-    removeAgent,
-  } = useAgents();
+
+const {
+  agents,
+  selectedAgent,
+  selectedAgentId,
+  selectedAgentRecord,
+  setSelectedAgentId,
+
+  // Approval status groups.
+  draftAgents,
+  pendingAgents,
+  rejectedAgents,
+
+  loading: agentsLoading,
+  error: agentsError,
+
+  refreshAgents,
+  addAgent,
+  editAgent,
+  removeAgent,
+  submitForApproval,
+} = useAgents();
+
 
   // Discover available MCP capabilities.
   const {
@@ -321,6 +348,7 @@ export default function Home() {
   async function handleSaveAgent(
     input: AgentConfig
   ): Promise<void> {
+    if (!getAccessToken()) { setLoginOpen(true); return; }
     if (editingAgent) {
       await editAgent(input);
     } else {
@@ -330,6 +358,94 @@ export default function Home() {
     resetConversation();
   }
 
+
+/**
+ * Save an agent and submit its draft for approval.
+ *
+ * A successful save is remembered so a failed submission can be
+ * retried without creating a duplicate or updating the draft again.
+ *
+ * Args:
+ *     input (AgentConfig): Agent configuration from the form.
+ *
+ * Returns:
+ *     Promise<void>: Resolves when submission is complete.
+ *
+ * Raises:
+ *     Error: If saving or submitting fails.
+ */
+async function handleSaveAndSubmit(
+  input: AgentConfig
+): Promise<void> {
+  if (!getAccessToken()) {
+    setLoginOpen(true);
+
+    throw new Error(
+      "Please sign in before submitting an agent."
+    );
+  }
+
+  const payload = JSON.stringify(input);
+  const previous = pendingSubmissionRef.current;
+
+  let agentId: string;
+
+  if (previous && previous.payload === payload) {
+    // Reuse the previously saved agent when retrying.
+    agentId = previous.id;
+  } else {
+    // Existing drafts are updated; new agents are created once.
+    const saved = editingAgent
+      ? await editAgent(input)
+      : await addAgent(input);
+
+    agentId = saved.id;
+
+    // Remember the saved agent in case submission fails.
+    pendingSubmissionRef.current = {
+      id: agentId,
+      payload,
+    };
+  }
+
+  // Submit the saved draft for Admin/Manager approval.
+  await submitForApproval(agentId);
+
+  // Clear retry state only after successful submission.
+  pendingSubmissionRef.current = null;
+
+  resetConversation();
+}
+
+  /**
+   * Submit an existing draft agent for Admin or Manager approval.
+   *
+   * Args:
+   *     agentId (string): Identifier of the draft agent.
+   *
+   * Returns:
+   *     Promise<void>: Resolves after the submission attempt.
+   *
+   * Raises:
+   *     None: Submission failures are displayed to the user.
+   */
+  async function handleSubmitDraft(agentId: string): Promise<void> {
+    if (!getAccessToken()) {
+      setLoginOpen(true);
+      return;
+    }
+
+    try {
+      await submitForApproval(agentId);
+    } catch (error) {
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : "Unable to submit agent for approval."
+      );
+    }
+  }
+
   /**
    * Delete the currently selected custom agent.
    *
@@ -337,6 +453,7 @@ export default function Home() {
    *     Promise<void>: Completes after deletion.
    */
   async function handleDeleteAgent(): Promise<void> {
+    if (!getAccessToken()) { setLoginOpen(true); return; }
     if (!selectedAgent) {
       return;
     }
@@ -385,6 +502,11 @@ export default function Home() {
     const trimmed = message.trim();
 
     if (!trimmed || loadingRef.current) {
+      return;
+    }
+    if (!getAccessToken()) {
+      pendingMessageRef.current = { message: trimmed, override };
+      setLoginOpen(true);
       return;
     }
 
@@ -449,6 +571,12 @@ export default function Home() {
        * Preserve Auto/Manual tool selection
        * and permission behavior.
        */
+      if (selectedAgentRecord?.approval_status !== "approved") {
+        throw new Error(
+          "This agent is not approved for execution. Submit it for review and wait for approval."
+        );
+      }
+
       if (
         activeMode === "manual" &&
         (!activeTool ||
@@ -481,19 +609,6 @@ export default function Home() {
             ? [nativeToolName]
             : [],
       };
-
-      /*
-       * Save permission changes before invoking
-       * the selected custom agent.
-       */
-      if (
-        updatedConfig.tool_access !==
-          selectedAgent.tool_access ||
-        JSON.stringify(updatedConfig.allowed_tools) !==
-          JSON.stringify(selectedAgent.allowed_tools)
-      ) {
-        await editAgent(updatedConfig);
-      }
 
       /*
        * Send the message using the selected
@@ -607,8 +722,29 @@ export default function Home() {
       )
   );
 
+  // After signing in, continue the message that triggered the modal.
+  useEffect(() => {
+    if (!isAuthenticated || !pendingMessageRef.current) return;
+    const pending = pendingMessageRef.current;
+    pendingMessageRef.current = null;
+    setLoginOpen(false);
+    void handleSendMessage(pending.message, pending.override);
+  // handleSendMessage uses the current render's state after authentication.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]);
+
+  function requestLogin(): void { setLoginOpen(true); }
+  function handleLogout(): void {
+    logout();
+    pendingMessageRef.current = null;
+    resetConversation();
+    setShowAgentForm(false);
+    setLoginOpen(false);
+  }
+
   return (
-    <main className="flex h-screen overflow-hidden bg-slate-950">
+    <RolePortal>
+    <main className="flex h-screen overflow-hidden bg-slate-950 text-slate-100 antialiased">
       {/* Full-screen initialization loader with ETA */}
       {isInitializing && (
         <FullScreenLoader
@@ -627,22 +763,39 @@ export default function Home() {
       {/* Left sidebar */}
       <Sidebar
         collapsed={sidebarCollapsed}
+        username={user?.username}
+        role={user?.role}
+        onLogin={requestLogin}
+        onLogout={handleLogout}
         mode={mode}
         selectedTool={selectedTool}
         tools={availableTools}
         agents={agents}
+        draftAgents={draftAgents}
+        pendingAgents={pendingAgents}
+        rejectedAgents={rejectedAgents}
+        onSubmitDraft={(agentId) => {
+          void handleSubmitDraft(agentId);
+        }}
+        onRefreshAgents={() => {
+          void refreshAgents();
+        }}
         selectedAgentId={selectedAgentId}
         agentLoading={agentsLoading}
         onSelectAgent={handleAgentChange}
         onCreateAgent={() => {
+          if (!isAuthenticated) { requestLogin(); return; }
+          pendingSubmissionRef.current = null;
           setEditingAgent(null);
           setShowAgentForm(true);
         }}
         onEditAgent={() => {
+          if (!isAuthenticated) { requestLogin(); return; }
           if (!selectedAgent) {
             return;
           }
 
+          pendingSubmissionRef.current = null;
           setEditingAgent(selectedAgent);
           setShowAgentForm(true);
         }}
@@ -660,13 +813,19 @@ export default function Home() {
       />
 
       {/* Center chat panel */}
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="relative flex min-w-0 flex-1 flex-col">
         {(agentsError || capabilitiesError) && (
           <div
             role="alert"
-            className="border-b border-red-500/20 bg-red-500/10 px-5 py-2 text-xs text-red-300"
+            className="flex items-center gap-2.5 border-b border-red-500/20 bg-gradient-to-r from-red-500/15 via-red-500/10 to-transparent px-5 py-2.5 text-xs text-red-200"
           >
-            {agentsError ?? capabilitiesError}
+            <AlertTriangle
+              size={14}
+              className="shrink-0 text-red-400"
+            />
+            <span className="min-w-0 break-words">
+              {agentsError ?? capabilitiesError}
+            </span>
           </div>
         )}
 
@@ -681,15 +840,34 @@ export default function Home() {
       </div>
 
       {/* Right execution log panel */}
-      <ExecutionLog
-        events={events}
-        collapsed={logCollapsed}
-        onToggle={() =>
-          setLogCollapsed(
-            (previous) => !previous
-          )
-        }
-      />
+      <div className="relative flex shrink-0">
+        {/* Login button sits in the log panel's header row (signed-out visitors only) */}
+        {!logCollapsed && !authLoading && !isAuthenticated && (
+          <button
+            type="button"
+            onClick={requestLogin}
+            className="absolute right-14 top-3.5 z-20 flex items-center gap-1.5 rounded-lg border border-indigo-300/30 bg-gradient-to-br from-indigo-500 to-indigo-600 px-3.5 py-1.5 text-xs font-medium text-white shadow-lg shadow-indigo-900/40 transition-all hover:from-indigo-400 hover:to-indigo-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70"
+          >
+            <LogIn size={13} />
+            Login
+          </button>
+        )}
+
+        <ExecutionLog
+          events={events}
+          collapsed={logCollapsed}
+          onToggle={() =>
+            setLogCollapsed(
+              (previous) => !previous
+            )
+          }
+        />
+      </div>
+
+      <LoginModal
+  open={loginOpen}
+  onClose={() => setLoginOpen(false)}
+/>
 
       {/* Agent creation/editing modal */}
       {showAgentForm && (
@@ -698,10 +876,27 @@ export default function Home() {
           onClose={() => {
             setShowAgentForm(false);
             setEditingAgent(null);
+            pendingSubmissionRef.current = null;
           }}
           onSave={handleSaveAgent}
+          onSaveAndSubmit={handleSaveAndSubmit}
         />
       )}
     </main>
+    </RolePortal>
   );
+}
+
+
+/**
+ * Render the playground only for authenticated users.
+ *
+ * Returns:
+ *     JSX.Element: Protected playground component.
+ *
+ * Raises:
+ *     None: No exceptions are intentionally raised.
+ */
+export default function Home() {
+  return <Playground />;
 }

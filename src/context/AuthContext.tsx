@@ -83,27 +83,24 @@ export function AuthProvider({
     };
   }, [logout]);
 
-  const login = useCallback(
-    async (credentials: LoginCredentials) => {
-      setIsLoading(true);
+const login = useCallback(
+  async (credentials: LoginCredentials) => {
+    try {
+      const response = await loginRequest(credentials);
 
-      try {
-        const response = await loginRequest(credentials);
-        const currentUser = await getCurrentUser(
-          response.access_token
-        );
+      const currentUser = await getCurrentUser(
+        response.access_token
+      );
 
-        setAccessToken(response.access_token);
-        setUser(currentUser);
-      } catch (error) {
-        logout();
-        throw error;
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [logout]
-  );
+      setAccessToken(response.access_token);
+      setUser(currentUser);
+    } catch (error) {
+      logout();
+      throw error;
+    }
+  },
+  [logout]
+);
 
   return (
     <AuthContext.Provider

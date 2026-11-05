@@ -9,32 +9,88 @@ const API_URL = (
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 ).replace(/\/+$/, "");
 
-// Keep the JWT access token in memory.
+const TOKEN_STORAGE_KEY = "mcp-playground:access-token";
+
+// Keep the JWT access token in memory and sessionStorage.
 let accessToken: string | null = null;
 
 /**
  * Store the JWT access token.
+ *
+ * Args:
+ *     token (string): JWT returned by the authentication API.
+ *
+ * Returns:
+ *     void: Stores the token in memory and sessionStorage.
  */
 export function setAccessToken(token: string): void {
   accessToken = token;
+
+  if (typeof window !== "undefined") {
+    try {
+      window.sessionStorage.setItem(
+        TOKEN_STORAGE_KEY,
+        token
+      );
+    } catch {
+      // Continue using the in-memory token.
+    }
+  }
 }
 
 /**
  * Retrieve the current JWT access token.
+ *
+ * Returns:
+ *     string | null: JWT from memory or sessionStorage,
+ *     or null when no token is available.
  */
 export function getAccessToken(): string | null {
+  if (accessToken) {
+    return accessToken;
+  }
+
+  if (typeof window !== "undefined") {
+    try {
+      accessToken = window.sessionStorage.getItem(
+        TOKEN_STORAGE_KEY
+      );
+    } catch {
+      return null;
+    }
+  }
+
   return accessToken;
 }
 
 /**
  * Clear the current JWT access token.
+ *
+ * Returns:
+ *     void: Removes the token from memory and sessionStorage.
  */
 export function clearAccessToken(): void {
   accessToken = null;
+
+  if (typeof window !== "undefined") {
+    try {
+      window.sessionStorage.removeItem(
+        TOKEN_STORAGE_KEY
+      );
+    } catch {
+      // In-memory token has already been cleared.
+    }
+  }
 }
 
 /**
  * Extract a readable error message from an API response.
+ *
+ * Args:
+ *     response (Response): HTTP response returned by the API.
+ *
+ * Returns:
+ *     Promise<string>: Error description.
  */
 async function readError(response: Response): Promise<string> {
   try {
@@ -60,6 +116,15 @@ async function readError(response: Response): Promise<string> {
 
 /**
  * Authenticate a user using the FastAPI login endpoint.
+ *
+ * Args:
+ *     credentials (LoginCredentials): Username and password.
+ *
+ * Returns:
+ *     Promise<TokenResponse>: Validated authentication response.
+ *
+ * Raises:
+ *     Error: If authentication fails or the response is invalid.
  */
 export async function login(
   credentials: LoginCredentials
@@ -97,6 +162,15 @@ export async function login(
 
 /**
  * Retrieve the authenticated user's profile.
+ *
+ * Args:
+ *     token (string): JWT access token.
+ *
+ * Returns:
+ *     Promise<AuthUser>: Validated authenticated user.
+ *
+ * Raises:
+ *     Error: If the request fails or the profile is invalid.
  */
 export async function getCurrentUser(
   token: string
@@ -132,7 +206,6 @@ export async function getCurrentUser(
   return data;
 }
 
-
 export interface SignupCredentials {
   username: string;
   password: string;
@@ -148,9 +221,14 @@ export interface SignupResponse {
 /**
  * Register a new account with the User role.
  *
- * @param credentials - Username and password.
- * @returns The newly registered user profile.
- * @throws Error if registration fails.
+ * Args:
+ *     credentials (SignupCredentials): Username and password.
+ *
+ * Returns:
+ *     Promise<SignupResponse>: Newly registered user profile.
+ *
+ * Raises:
+ *     Error: If registration fails.
  */
 export async function signup(
   credentials: SignupCredentials
@@ -191,4 +269,3 @@ export async function signup(
 
   return (await response.json()) as SignupResponse;
 }
-

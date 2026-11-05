@@ -194,11 +194,12 @@ export default function ManagerManagement() {
     }
   }
 
-  const filteredManagers = managers.filter((manager) =>
-    manager.username
-      .toLowerCase()
-      .includes(search.toLowerCase())
-  );
+  const normalizedSearch = search.trim().toLowerCase();
+
+  const filteredManagers = managers.filter((manager) => {
+    const username = (manager.username ?? "").toLowerCase();
+    return username.includes(normalizedSearch);
+  });
 
   const modalTitle: Record<ModalMode, string> = {
     create: "Create Manager",

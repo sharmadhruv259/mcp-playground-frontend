@@ -98,26 +98,45 @@ export default function AgentReviews() {
     (record) => record.approval_status === "approved"
   ).length;
 
-  const filteredRecords = records.filter((record) => {
-    if (
-      filter === "pending" &&
-      record.approval_status !== "pending"
-    ) {
-      return false;
-    }
 
-    const query = search.trim().toLowerCase();
+/*
+ * AGENT SEARCH AND STATUS FILTER
+ *
+ * Safely handle nullable agent fields to prevent
+ * runtime errors when searching agent records.
+ */
+const normalizedSearch = search.trim().toLowerCase();
 
-    return (
-      record.configuration.name
-        .toLowerCase()
-        .includes(query) ||
-      record.configuration.description
-        .toLowerCase()
-        .includes(query) ||
-      record.owner_id.toLowerCase().includes(query)
-    );
-  });
+const filteredRecords = records.filter((record) => {
+  // Filter by approval status.
+  if (
+    filter === "pending" &&
+    record.approval_status !== "pending"
+  ) {
+    return false;
+  }
+
+  // Safely normalize searchable fields.
+  const name = (
+    record.configuration.name ?? ""
+  ).toLowerCase();
+
+  const description = (
+    record.configuration.description ?? ""
+  ).toLowerCase();
+
+  const ownerId = (
+    record.owner_id ?? ""
+  ).toLowerCase();
+
+  // Return matching agents.
+  return (
+    name.includes(normalizedSearch) ||
+    description.includes(normalizedSearch) ||
+    ownerId.includes(normalizedSearch)
+  );
+});
+
 
   function canReview(record: AgentRecord): boolean {
     return (

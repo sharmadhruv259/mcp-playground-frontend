@@ -800,7 +800,7 @@ async function handleSaveAndSubmit(
         />
       )}
 
-      {/* Left sidebar */}
+    {!authLoading && (
       <Sidebar
         collapsed={sidebarCollapsed}
         username={user?.username}
@@ -852,6 +852,7 @@ async function handleSaveAndSubmit(
         onToolChange={setSelectedTool}
       />
 
+      )}
       {/* Center chat panel */}
       <div className="relative flex min-w-0 flex-1 flex-col">
         {(agentsError || capabilitiesError) && (

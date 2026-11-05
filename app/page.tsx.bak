@@ -1,0 +1,925 @@
+"use client";
+
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+
+import { AlertTriangle, LogIn } from "lucide-react";
+
+import LoginModal from "@/components/auth/LoginModal";
+import { useAuth } from "@/context/AuthContext";
+import { getAccessToken } from "@/lib/auth";
+import Sidebar from "@/components/layout/Sidebar";
+import ChatPanel from "@/components/chat/ChatPanel";
+import ExecutionLog from "@/components/execution/ExecutionLog";
+import AgentForm from "@/components/agents/AgentForm";
+import FullScreenLoader from "@/components/layout/FullScreenLoader";
+import RolePortal from "@/components/layout/RolePortal";
+
+import {
+  STARTER_PROMPTS,
+  type StarterPrompt,
+} from "@/constants/starters";
+
+import { useAgents } from "@/hooks/useAgents";
+import { useMCPCapabilities } from "@/hooks/useMCPCapabilities";
+import { useLoadingPrediction } from "@/hooks/useLoadingPrediction";
+import { sendChatMessage } from "@/lib/api";
+
+import type { AgentConfig } from "@/types/agents";
+import type {
+  ChatMessage,
+  ExecutionEvent,
+} from "@/types/chat";
+import type {
+  ToolDefinition,
+  ToolMode,
+} from "@/types/tools";
+
+const MCP_TOOL_PREFIX = "mcp_tool__";
+
+const RESOURCE_FUNCTION = "read_mcp_resource";
+const PROMPT_FUNCTION = "get_mcp_prompt";
+
+
+/**
+ * Convert a frontend MCP tool name into its native name.
+ *
+ * Args:
+ *     toolName (string | null): Frontend tool name.
+ *
+ * Returns:
+ *     string | null: Native MCP tool name.
+ */
+function getNativeMCPToolName(
+  toolName: string | null
+): string | null {
+  if (!toolName) {
+    return null;
+  }
+
+  if (!toolName.startsWith(MCP_TOOL_PREFIX)) {
+    return null;
+  }
+
+  const nativeName = toolName.slice(
+    MCP_TOOL_PREFIX.length
+  );
+
+  return nativeName || null;
+}
+
+/**
+ * Convert a native MCP tool name into its frontend name.
+ *
+ * Args:
+ *     nativeName (string | null): Native MCP tool name.
+ *
+ * Returns:
+ *     string | null: Frontend MCP tool name.
+ */
+function getFrontendMCPToolName(
+  nativeName: string | null
+): string | null {
+  if (!nativeName) {
+    return null;
+  }
+
+  if (nativeName.startsWith(MCP_TOOL_PREFIX)) {
+    return nativeName;
+  }
+
+  return `${MCP_TOOL_PREFIX}${nativeName}`;
+}
+
+function Playground() {
+  const { user, isAuthenticated, isLoading: authLoading, logout } = useAuth();
+  const [loginOpen, setLoginOpen] = useState(false);
+  const [introPending, setIntroPending] = useState(false);
+
+useEffect(() => {
+  try {
+    if (
+      window.sessionStorage.getItem(
+        "mcp-playground:intro-shown"
+      ) !== "true"
+    ) {
+      setIntroPending(true);
+      window.sessionStorage.setItem(
+        "mcp-playground:intro-shown",
+        "true"
+      );
+    }
+  } catch {
+    // Continue without the intro if storage is unavailable.
+  }
+}, []);
+  const pendingMessageRef = useRef<{message: string; override?: {mode: ToolMode; selectedTool: string | null}} | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] =
+    useState(false);
+
+  const [logCollapsed, setLogCollapsed] =
+    useState(false);
+
+  const [showAgentForm, setShowAgentForm] =
+    useState(false);
+
+  const [editingAgent, setEditingAgent] =
+    useState<AgentConfig | null>(null);
+
+  // Preserve the saved agent ID if a review submission must be retried.
+  const pendingSubmissionRef = useRef<{
+    id: string;
+    payload: string;
+  } | null>(null);
+
+  // Chat state.
+  const [loading, setLoading] = useState(false);
+  const [chatKey, setChatKey] = useState(0);
+
+  // MCP tool selection state.
+  const [mode, setMode] =
+    useState<ToolMode>("auto");
+
+  const [selectedTool, setSelectedTool] =
+    useState<string | null>(null);
+
+  // Conversation and execution logs.
+  const [messages, setMessages] =
+    useState<ChatMessage[]>([]);
+
+  const [events, setEvents] =
+    useState<ExecutionEvent[]>([]);
+
+  // Track active requests to prevent stale responses.
+  const requestIdRef = useRef(0);
+  const loadingRef = useRef(false);
+
+  // Load saved agents from the backend.
+
+const {
+  agents,
+  selectedAgent,
+  selectedAgentId,
+  selectedAgentRecord,
+  setSelectedAgentId,
+
+  // Approval status groups.
+  draftAgents,
+  pendingAgents,
+  rejectedAgents,
+
+  loading: agentsLoading,
+  error: agentsError,
+
+  refreshAgents,
+  addAgent,
+  editAgent,
+  removeAgent,
+  submitForApproval,
+} = useAgents();
+
+
+  // Discover available MCP capabilities.
+  const {
+    capabilities,
+    loading: capabilitiesLoading,
+    error: capabilitiesError,
+  } = useMCPCapabilities();
+
+  /*
+   * Display the full-screen loader while initial
+   * backend requests are running.
+   */
+  useEffect(() => {
+  if (!isInitializing && introPending) {
+    setIntroPending(false);
+  }
+}, [isInitializing, introPending]);
+ 
+
+  /*
+   * HISTORICAL LOADING-TIME PREDICTION
+   *
+   * Predict the total initialization duration
+   * using previously successful loads.
+   *
+   * The hook observes the existing initialization
+   * state and does not make additional API requests.
+   */
+  const loadingPrediction = useLoadingPrediction({
+    isInitializing,
+    hasError: Boolean(
+      agentsError || capabilitiesError
+    ),
+  });
+
+  /*
+   * When no custom agent is selected,
+   * use the built-in Default Assistant.
+   */
+  const isDefaultAssistant = !selectedAgent;
+
+  /*
+   * Convert discovered MCP capabilities into
+   * frontend tool definitions.
+   */
+  const availableTools = useMemo<ToolDefinition[]>(() => {
+    const tools: ToolDefinition[] = [];
+
+    // Native MCP tools.
+    for (const tool of capabilities.tools) {
+      tools.push({
+        name: `${MCP_TOOL_PREFIX}${tool.name}`,
+        description:
+          tool.description ?? "MCP server tool.",
+        source: "builtin",
+        parameters: {
+          type: "object",
+          properties: {},
+          required: [],
+        },
+      });
+    }
+
+    // MCP resources.
+    if (capabilities.resources.length > 0) {
+      tools.push({
+        name: RESOURCE_FUNCTION,
+        description:
+          "Read documentation and resources from the MCP server.",
+        source: "builtin",
+        parameters: {
+          type: "object",
+          properties: {},
+          required: [],
+        },
+      });
+    }
+
+    // MCP prompts.
+    if (capabilities.prompts.length > 0) {
+      tools.push({
+        name: PROMPT_FUNCTION,
+        description:
+          "Retrieve reusable instructions from the MCP server.",
+        source: "builtin",
+        parameters: {
+          type: "object",
+          properties: {},
+          required: [],
+        },
+      });
+    }
+
+    return tools;
+  }, [capabilities]);
+
+  /*
+   * Restore saved tool permissions when switching
+   * between custom agents.
+   */
+  useEffect(() => {
+    if (!selectedAgent) {
+      setMode("auto");
+      setSelectedTool(null);
+      return;
+    }
+
+    if (
+      selectedAgent.tool_access === "selected" &&
+      selectedAgent.allowed_tools.length > 0
+    ) {
+      setMode("manual");
+
+      setSelectedTool(
+        getFrontendMCPToolName(
+          selectedAgent.allowed_tools[0]
+        )
+      );
+    } else {
+      setMode("auto");
+      setSelectedTool(null);
+    }
+  }, [selectedAgentId, selectedAgent]);
+
+  /**
+   * Reset the active conversation.
+   *
+   * Returns:
+   *     void: Clears messages and execution logs.
+   */
+  function resetConversation(): void {
+    requestIdRef.current += 1;
+    loadingRef.current = false;
+
+    setLoading(false);
+    setMessages([]);
+    setEvents([]);
+
+    setChatKey((previous) => previous + 1);
+  }
+
+  /**
+   * Start a new conversation.
+   */
+  function handleNewChat(): void {
+    resetConversation();
+  }
+
+  /**
+   * Switch between the Default Assistant and custom agents.
+   *
+   * Args:
+   *     agentId (string): Selected agent ID or empty string.
+   */
+  function handleAgentChange(agentId: string): void {
+    resetConversation();
+
+    setSelectedAgentId(agentId || null);
+  }
+
+  /**
+   * Change MCP tool selection mode.
+   *
+   * Args:
+   *     value (ToolMode): Auto or manual mode.
+   */
+  function handleModeChange(value: ToolMode): void {
+    setMode(value);
+
+    if (value === "auto") {
+      setSelectedTool(null);
+    }
+  }
+
+  /**
+   * Create or update a saved custom agent.
+   *
+   * Args:
+   *     input (AgentConfig): Agent configuration.
+   *
+   * Returns:
+   *     Promise<void>: Completes after saving.
+   *
+   * Raises:
+   *     Error: If the backend request fails.
+   */
+  async function handleSaveAgent(
+    input: AgentConfig
+  ): Promise<void> {
+    if (!getAccessToken()) { setLoginOpen(true); return; }
+    if (editingAgent) {
+      await editAgent(input);
+    } else {
+      await addAgent(input);
+    }
+
+    resetConversation();
+  }
+
+
+/**
+ * Save an agent and submit its draft for approval.
+ *
+ * A successful save is remembered so a failed submission can be
+ * retried without creating a duplicate or updating the draft again.
+ *
+ * Args:
+ *     input (AgentConfig): Agent configuration from the form.
+ *
+ * Returns:
+ *     Promise<void>: Resolves when submission is complete.
+ *
+ * Raises:
+ *     Error: If saving or submitting fails.
+ */
+async function handleSaveAndSubmit(
+  input: AgentConfig
+): Promise<void> {
+  if (!getAccessToken()) {
+    setLoginOpen(true);
+
+    throw new Error(
+      "Please sign in before submitting an agent."
+    );
+  }
+
+  const payload = JSON.stringify(input);
+  const previous = pendingSubmissionRef.current;
+
+  let agentId: string;
+
+  if (previous && previous.payload === payload) {
+    // Reuse the previously saved agent when retrying.
+    agentId = previous.id;
+  } else {
+    // Existing drafts are updated; new agents are created once.
+    const saved = editingAgent
+      ? await editAgent(input)
+      : await addAgent(input);
+
+    agentId = saved.id;
+
+    // Remember the saved agent in case submission fails.
+    pendingSubmissionRef.current = {
+      id: agentId,
+      payload,
+    };
+  }
+
+  // Submit the saved draft for Admin/Manager approval.
+  await submitForApproval(agentId);
+
+  // Clear retry state only after successful submission.
+  pendingSubmissionRef.current = null;
+
+  resetConversation();
+}
+
+  /**
+   * Submit an existing draft agent for Admin or Manager approval.
+   *
+   * Args:
+   *     agentId (string): Identifier of the draft agent.
+   *
+   * Returns:
+   *     Promise<void>: Resolves after the submission attempt.
+   *
+   * Raises:
+   *     None: Submission failures are displayed to the user.
+   */
+  async function handleSubmitDraft(agentId: string): Promise<void> {
+    if (!getAccessToken()) {
+      setLoginOpen(true);
+      return;
+    }
+
+    try {
+      await submitForApproval(agentId);
+    } catch (error) {
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : "Unable to submit agent for approval."
+      );
+    }
+  }
+
+  /**
+   * Delete the currently selected custom agent.
+   *
+   * Returns:
+   *     Promise<void>: Completes after deletion.
+   */
+  async function handleDeleteAgent(): Promise<void> {
+    if (!getAccessToken()) { setLoginOpen(true); return; }
+    if (!selectedAgent) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete agent "${selectedAgent.name}"?`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await removeAgent(selectedAgent.id);
+
+      resetConversation();
+    } catch (error) {
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : "Unable to delete agent."
+      );
+    }
+  }
+
+  /**
+   * Send a message to the Default Assistant or custom agent.
+   *
+   * Args:
+   *     message (string): User's message.
+   *     override (object): Optional MCP tool selection override.
+   *
+   * Returns:
+   *     Promise<void>: Updates the chat and execution logs.
+   *
+   * Raises:
+   *     Error: Backend failures are handled in the chat UI.
+   */
+  async function handleSendMessage(
+    message: string,
+    override?: {
+      mode: ToolMode;
+      selectedTool: string | null;
+    }
+  ): Promise<void> {
+    const trimmed = message.trim();
+
+    if (!trimmed || loadingRef.current) {
+      return;
+    }
+    if (!getAccessToken()) {
+      pendingMessageRef.current = { message: trimmed, override };
+      setLoginOpen(true);
+      return;
+    }
+
+    loadingRef.current = true;
+
+    const requestId = ++requestIdRef.current;
+
+    const activeMode = override?.mode ?? mode;
+
+    const activeTool = override
+      ? override.selectedTool
+      : selectedTool;
+
+    setLoading(true);
+    setEvents([]);
+
+    // Display the user's message immediately.
+    setMessages((previous) => [
+      ...previous,
+      {
+        id: crypto.randomUUID(),
+        role: "user",
+        content: trimmed,
+      },
+    ]);
+
+    try {
+      /*
+       * DEFAULT ASSISTANT
+       *
+       * No custom agent is selected.
+       * The backend handles general chat through Groq.
+       * No MCP tools are executed.
+       */
+      if (!selectedAgent) {
+        const result = await sendChatMessage(
+          trimmed,
+          null
+        );
+
+        if (requestId !== requestIdRef.current) {
+          return;
+        }
+
+        setMessages((previous) => [
+          ...previous,
+          {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: result.answer,
+          },
+        ]);
+
+        setEvents(result.events ?? []);
+
+        return;
+      }
+
+      /*
+       * CUSTOM MCP AGENT
+       *
+       * Preserve Auto/Manual tool selection
+       * and permission behavior.
+       */
+      if (selectedAgentRecord?.approval_status !== "approved") {
+        throw new Error(
+          "This agent is not approved for execution. Submit it for review and wait for approval."
+        );
+      }
+
+      if (
+        activeMode === "manual" &&
+        (!activeTool ||
+          !availableTools.some(
+            (tool) => tool.name === activeTool
+          ))
+      ) {
+        throw new Error(
+          "Choose an available MCP operation in Manual mode."
+        );
+      }
+
+      const nativeToolName =
+        activeMode === "manual"
+          ? getNativeMCPToolName(activeTool)
+          : null;
+
+      /*
+       * Backend allowed_tools stores native MCP
+       * tool names without the Groq prefix.
+       */
+      const updatedConfig: AgentConfig = {
+        ...selectedAgent,
+
+        tool_access:
+          nativeToolName ? "selected" : "all",
+
+        allowed_tools:
+          nativeToolName
+            ? [nativeToolName]
+            : [],
+      };
+
+      /*
+       * Send the message using the selected
+       * custom agent's saved ID.
+       */
+      const result = await sendChatMessage(
+        trimmed,
+        selectedAgent.id
+      );
+
+      if (requestId !== requestIdRef.current) {
+        return;
+      }
+
+      setMessages((previous) => [
+        ...previous,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: result.answer,
+        },
+      ]);
+
+      setEvents(result.events ?? []);
+    } catch (error) {
+      if (requestId !== requestIdRef.current) {
+        return;
+      }
+
+      const description =
+        error instanceof Error
+          ? error.message
+          : "An unexpected error occurred.";
+
+      setMessages((previous) => [
+        ...previous,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: `Request failed: ${description}`,
+        },
+      ]);
+
+      setEvents([
+        {
+          id: crypto.randomUUID(),
+          tool: "backend_request",
+          status: "failed",
+          description,
+        },
+      ]);
+    } finally {
+      if (requestId === requestIdRef.current) {
+        loadingRef.current = false;
+        setLoading(false);
+      }
+    }
+  }
+
+  /**
+   * Execute a predefined starter question.
+   *
+   * Args:
+   *     starter (StarterPrompt): Selected starter question.
+   *
+   * Returns:
+   *     void: Sends the predefined question.
+   */
+  function handleStarterSelect(
+    starter: StarterPrompt
+  ): void {
+    if (loadingRef.current) {
+      return;
+    }
+
+    const nextMode: ToolMode = starter.tool
+      ? "manual"
+      : "auto";
+
+    /*
+     * Default Assistant does not have MCP access.
+     * Preserve the starter question without
+     * activating MCP tool selection.
+     */
+    if (isDefaultAssistant) {
+      void handleSendMessage(starter.prompt, {
+        mode: "auto",
+        selectedTool: null,
+      });
+
+      return;
+    }
+
+    setMode(nextMode);
+    setSelectedTool(starter.tool);
+
+    void handleSendMessage(starter.prompt, {
+      mode: nextMode,
+      selectedTool: starter.tool,
+    });
+  }
+
+  /*
+   * Preserve all original predefined questions.
+   */
+  const availableStarters = STARTER_PROMPTS.filter(
+    (starter) =>
+      starter.tool === null ||
+      availableTools.some(
+        (tool) => tool.name === starter.tool
+      )
+  );
+
+  // After signing in, continue the message that triggered the modal.
+  useEffect(() => {
+    if (!isAuthenticated || !pendingMessageRef.current) return;
+    const pending = pendingMessageRef.current;
+    pendingMessageRef.current = null;
+    setLoginOpen(false);
+    void handleSendMessage(pending.message, pending.override);
+  // handleSendMessage uses the current render's state after authentication.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]);
+
+  function requestLogin(): void { setLoginOpen(true); }
+  function handleLogout(): void {
+    logout();
+    pendingMessageRef.current = null;
+    resetConversation();
+    setShowAgentForm(false);
+    setLoginOpen(false);
+  }
+
+  return (
+    <RolePortal>
+    <main className="flex h-screen overflow-hidden bg-slate-950 text-slate-100 antialiased">
+      {/* Full-screen initialization loader with ETA */}
+      {showIntroLoader && (
+        <FullScreenLoader
+          estimatedRemainingSeconds={
+            loadingPrediction.estimatedRemainingSeconds
+          }
+          predictedTotalSeconds={
+            loadingPrediction.predictedTotalSeconds
+          }
+          isOverEstimate={
+            loadingPrediction.isOverEstimate
+          }
+        />
+      )}
+
+      {/* Left sidebar */}
+      <Sidebar
+        collapsed={sidebarCollapsed}
+        username={user?.username}
+        role={user?.role}
+        onLogin={requestLogin}
+        onLogout={handleLogout}
+        mode={mode}
+        selectedTool={selectedTool}
+        tools={availableTools}
+        agents={agents}
+        draftAgents={draftAgents}
+        pendingAgents={pendingAgents}
+        rejectedAgents={rejectedAgents}
+        onSubmitDraft={(agentId) => {
+          void handleSubmitDraft(agentId);
+        }}
+        onRefreshAgents={() => {
+          void refreshAgents();
+        }}
+        selectedAgentId={selectedAgentId}
+        agentLoading={agentsLoading}
+        onSelectAgent={handleAgentChange}
+        onCreateAgent={() => {
+          if (!isAuthenticated) { requestLogin(); return; }
+          pendingSubmissionRef.current = null;
+          setEditingAgent(null);
+          setShowAgentForm(true);
+        }}
+        onEditAgent={() => {
+          if (!isAuthenticated) { requestLogin(); return; }
+          if (!selectedAgent) {
+            return;
+          }
+
+          pendingSubmissionRef.current = null;
+          setEditingAgent(selectedAgent);
+          setShowAgentForm(true);
+        }}
+        onDeleteAgent={() => {
+          void handleDeleteAgent();
+        }}
+        onToggle={() =>
+          setSidebarCollapsed(
+            (previous) => !previous
+          )
+        }
+        onNewChat={handleNewChat}
+        onModeChange={handleModeChange}
+        onToolChange={setSelectedTool}
+      />
+
+      {/* Center chat panel */}
+      <div className="relative flex min-w-0 flex-1 flex-col">
+        {(agentsError || capabilitiesError) && (
+          <div
+            role="alert"
+            className="flex items-center gap-2.5 border-b border-red-500/20 bg-gradient-to-r from-red-500/15 via-red-500/10 to-transparent px-5 py-2.5 text-xs text-red-200"
+          >
+            <AlertTriangle
+              size={14}
+              className="shrink-0 text-red-400"
+            />
+            <span className="min-w-0 break-words">
+              {agentsError ?? capabilitiesError}
+            </span>
+          </div>
+        )}
+
+        <ChatPanel
+          key={chatKey}
+          messages={messages}
+          loading={loading}
+          starters={availableStarters}
+          onSelectStarter={handleStarterSelect}
+          onSendMessage={handleSendMessage}
+        />
+      </div>
+
+      {/* Right execution log panel */}
+      <div className="relative flex shrink-0">
+        {/* Login button sits in the log panel's header row (signed-out visitors only) */}
+        {!logCollapsed && !authLoading && !isAuthenticated && (
+          <button
+            type="button"
+            onClick={requestLogin}
+            className="absolute right-14 top-3.5 z-20 flex items-center gap-1.5 rounded-lg border border-indigo-300/30 bg-gradient-to-br from-indigo-500 to-indigo-600 px-3.5 py-1.5 text-xs font-medium text-white shadow-lg shadow-indigo-900/40 transition-all hover:from-indigo-400 hover:to-indigo-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70"
+          >
+            <LogIn size={13} />
+            Login
+          </button>
+        )}
+
+        <ExecutionLog
+          events={events}
+          collapsed={logCollapsed}
+          onToggle={() =>
+            setLogCollapsed(
+              (previous) => !previous
+            )
+          }
+        />
+      </div>
+
+      <LoginModal
+  open={loginOpen}
+  onClose={() => setLoginOpen(false)}
+/>
+
+      {/* Agent creation/editing modal */}
+      {showAgentForm && (
+        <AgentForm
+          agent={editingAgent}
+          onClose={() => {
+            setShowAgentForm(false);
+            setEditingAgent(null);
+            pendingSubmissionRef.current = null;
+          }}
+          onSave={handleSaveAgent}
+          onSaveAndSubmit={handleSaveAndSubmit}
+        />
+      )}
+    </main>
+    </RolePortal>
+  );
+}
+
+
+/**
+ * Render the playground only for authenticated users.
+ *
+ * Returns:
+ *     JSX.Element: Protected playground component.
+ *
+ * Raises:
+ *     None: No exceptions are intentionally raised.
+ */
+export default function Home() {
+  return <Playground />;
+}

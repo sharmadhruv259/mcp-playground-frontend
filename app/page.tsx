@@ -98,6 +98,25 @@ function getFrontendMCPToolName(
 function Playground() {
   const { user, isAuthenticated, isLoading: authLoading, logout } = useAuth();
   const [loginOpen, setLoginOpen] = useState(false);
+  const [introPending, setIntroPending] = useState(false);
+
+useEffect(() => {
+  try {
+    if (
+      window.sessionStorage.getItem(
+        "mcp-playground:intro-shown"
+      ) !== "true"
+    ) {
+      setIntroPending(true);
+      window.sessionStorage.setItem(
+        "mcp-playground:intro-shown",
+        "true"
+      );
+    }
+  } catch {
+    // Continue without the intro if storage is unavailable.
+  }
+}, []);
   const pendingMessageRef = useRef<{message: string; override?: {mode: ToolMode; selectedTool: string | null}} | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] =
     useState(false);
@@ -141,6 +160,7 @@ function Playground() {
 
   // Load saved agents from the backend.
 
+
 const {
   agents,
   selectedAgent,
@@ -163,36 +183,56 @@ const {
   submitForApproval,
 } = useAgents();
 
+// Discover available MCP capabilities.
+const {
+  capabilities,
+  loading: capabilitiesLoading,
+  error: capabilitiesError,
+} = useMCPCapabilities();
 
-  // Discover available MCP capabilities.
-  const {
-    capabilities,
-    loading: capabilitiesLoading,
-    error: capabilitiesError,
-  } = useMCPCapabilities();
+/*
+ * INITIAL BACKEND LOADING
+ *
+ * Track whether saved agents or MCP capabilities
+ * are still being loaded from the backend.
+ */
+const isInitializing =
+  agentsLoading || capabilitiesLoading;
 
-  /*
-   * Display the full-screen loader while initial
-   * backend requests are running.
-   */
-  const isInitializing =
-    agentsLoading || capabilitiesLoading;
+/*
+ * INTRODUCTION LOADER
+ *
+ * Display the full-screen animation only during
+ * the first initialization in this browser tab.
+ */
+const showIntroLoader =
+  introPending && isInitializing;
 
-  /*
-   * HISTORICAL LOADING-TIME PREDICTION
-   *
-   * Predict the total initialization duration
-   * using previously successful loads.
-   *
-   * The hook observes the existing initialization
-   * state and does not make additional API requests.
-   */
-  const loadingPrediction = useLoadingPrediction({
-    isInitializing,
-    hasError: Boolean(
-      agentsError || capabilitiesError
-    ),
-  });
+/*
+ * Hide the introduction once backend
+ * initialization is complete.
+ */
+useEffect(() => {
+  if (!isInitializing && introPending) {
+    setIntroPending(false);
+  }
+}, [isInitializing, introPending]);
+
+/*
+ * HISTORICAL LOADING-TIME PREDICTION
+ *
+ * Predict the total initialization duration
+ * using previously successful loads.
+ *
+ * The hook observes the existing initialization
+ * state and does not make additional API requests.
+ */
+const loadingPrediction = useLoadingPrediction({
+  isInitializing,
+  hasError: Boolean(
+    agentsError || capabilitiesError
+  ),
+});
 
   /*
    * When no custom agent is selected,
@@ -746,7 +786,7 @@ async function handleSaveAndSubmit(
     <RolePortal>
     <main className="flex h-screen overflow-hidden bg-slate-950 text-slate-100 antialiased">
       {/* Full-screen initialization loader with ETA */}
-      {isInitializing && (
+      {showIntroLoader && (
         <FullScreenLoader
           estimatedRemainingSeconds={
             loadingPrediction.estimatedRemainingSeconds
